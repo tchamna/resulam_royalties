@@ -1,0 +1,80 @@
+"""
+Main application entry point for Resulam Royalties Dashboard
+
+This is the refactored, production-ready version of the original script.
+Run this file to start the dashboard server.
+"""
+import sys
+from pathlib import Path
+
+# Add src to path
+sys.path.insert(0, str(Path(__file__).parent))
+
+from src.data import load_and_process_all_data
+from src.dashboard import create_dashboard
+from src.utils.helpers import export_processed_data, validate_data_files
+from src.config import (
+    BOOKS_DATABASE_PATH,
+    ROYALTIES_CURRENT_YEAR_PATH,
+    ROYALTIES_HISTORY_PATH,
+    USE_LIVE_RATES
+)
+
+
+def main():
+    """Main application function"""
+    
+    print("\n" + "="*70)
+    print("📚 RESULAM ROYALTIES DASHBOARD")
+    print("="*70)
+    
+    # Show exchange rate configuration
+    rate_source = "🌐 LIVE (from API)" if USE_LIVE_RATES else "🔒 HARDCODED"
+    print(f"\n💱 Exchange Rates: {rate_source}")
+    print(f"   ℹ️  To switch, run: python configure_exchange_rates.py")
+    
+    # Validate data files exist
+    print("\n🔍 Validating data files...")
+    required_files = [
+        BOOKS_DATABASE_PATH,
+        ROYALTIES_HISTORY_PATH
+    ]
+    
+    if not validate_data_files(required_files):
+        print("\n❌ Please ensure all required data files are in place.")
+        print("   Update paths in src/config.py if needed.")
+        return
+    
+    # Load and process data
+    print("\n📊 Loading and processing data...")
+    try:
+        data = load_and_process_all_data()
+        print(f"✅ Data loaded successfully!")
+        print(f"   - Books: {len(data['books'])} records")
+        print(f"   - Royalties: {len(data['royalties_history'])} records")
+        print(f"   - Authors (exploded): {len(data['royalties_exploded'])} records")
+    except Exception as e:
+        print(f"\n❌ Error loading data: {e}")
+        print("   Please check your data files and try again.")
+        return
+    
+    # Export processed data
+    print("\n💾 Exporting processed data...")
+    try:
+        exported_files = export_processed_data(data)
+        print(f"✅ Processed data exported successfully!")
+    except Exception as e:
+        print(f"⚠️  Warning: Could not export data: {e}")
+    
+    # Create and run dashboard
+    print("\n🚀 Starting dashboard...")
+    try:
+        dashboard = create_dashboard(data)
+        dashboard.run()
+    except Exception as e:
+        print(f"\n❌ Error starting dashboard: {e}")
+        raise
+
+
+if __name__ == "__main__":
+    main()
