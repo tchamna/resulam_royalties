@@ -6,24 +6,27 @@ import plotly.express as px
 import plotly.graph_objects as go
 from typing import List, Optional
 
-from ..config import VIZ_CONFIG, CURRENT_YEAR, AUTHOR_NORMALIZATION
+from ..config import VIZ_CONFIG, CURRENT_YEAR, AUTHOR_NORMALIZATION, NET_REVENUE_PERCENTAGE
 
 
 class SalesCharts:
     """Generate sales-related charts"""
     
     @staticmethod
-    def books_sold_per_year(df: pd.DataFrame) -> go.Figure:
+    def books_sold_per_year(df: pd.DataFrame, title: str = None) -> go.Figure:
         """Create bar chart of books sold per year"""
         # Group by year and sum net units sold
         units_by_year = df.groupby('Year Sold')['Net Units Sold'].sum().reset_index()
         units_by_year = units_by_year.sort_values(by='Net Units Sold', ascending=False)
         
+        if title is None:
+            title = f'Number of Books Sold by Resulam per Year (2015 to {CURRENT_YEAR - 1})'
+        
         fig = px.bar(
             units_by_year,
             x='Year Sold',
             y='Net Units Sold',
-            title=f'Number of Books Sold by Resulam per Year (2015 to {CURRENT_YEAR - 1})',
+            title=title,
             labels={'Year Sold': 'Year', 'Net Units Sold': 'Books Sold'},
             text='Net Units Sold',
             template=VIZ_CONFIG['template']
@@ -40,10 +43,13 @@ class SalesCharts:
         return fig
     
     @staticmethod
-    def sales_by_language_stacked(df: pd.DataFrame) -> go.Figure:
+    def sales_by_language_stacked(df: pd.DataFrame, title: str = None) -> go.Figure:
         """Create interactive stacked/grouped bar chart by language"""
         # Filter out excluded languages
         df_filtered = df[~df['Language'].isin(VIZ_CONFIG['excluded_languages'])]
+        
+        if title is None:
+            title = 'Books Sold by Language per Year (Grouped)'
         
         # Group by year and language
         units_by_year_lang = df_filtered.groupby(
@@ -68,13 +74,14 @@ class SalesCharts:
             ))
         
         # Create dropdown buttons
+        base_title = title if title else 'Books Sold by Language per Year'
         dropdown_buttons = [
             {
                 'label': 'All (Stacked)',
                 'method': 'update',
                 'args': [
                     {'visible': [True] * len(sorted_languages)},
-                    {'barmode': 'stack', 'title': 'Books Sold by Language per Year (Stacked)'}
+                    {'barmode': 'stack', 'title': f'{base_title} (Stacked)'}
                 ]
             },
             {
@@ -82,7 +89,7 @@ class SalesCharts:
                 'method': 'update',
                 'args': [
                     {'visible': [True] * len(sorted_languages)},
-                    {'barmode': 'group', 'title': 'Books Sold by Language per Year (Grouped)'}
+                    {'barmode': 'group', 'title': f'{base_title} (Grouped)'}
                 ]
             }
         ]
@@ -113,10 +120,10 @@ class SalesCharts:
                 'y': 1.15,
                 'yanchor': 'top'
             }],
-            title='Books Sold by Language per Year',
+            title=title if title else 'Books Sold by Language per Year (Grouped)',
             xaxis_title='Year',
             yaxis_title='Net Units Sold',
-            barmode='stack',
+            barmode='group',
             template=VIZ_CONFIG['template']
         )
         
@@ -317,30 +324,54 @@ class GeographicCharts:
             template=VIZ_CONFIG['template']
         )
         
-        fig.update_traces(textposition='inside', textinfo='percent+label')
+        fig.update_traces(
+            textposition='auto',
+            textinfo='percent+label',
+            textfont=dict(size=11),
+            hovertemplate='<b>%{label}</b><br>Units: %{value}<br>Percentage: %{percent}<extra></extra>'
+        )
+        
+        fig.update_layout(
+            height=500,
+            showlegend=True,
+            legend=dict(x=0.02, y=0.98)
+        )
         
         return fig
     
     @staticmethod
     def revenue_by_marketplace(df: pd.DataFrame) -> go.Figure:
-        """Create bar chart of revenue by marketplace"""
+        """Create bar chart of revenue by marketplace (net revenue = NET_REVENUE_PERCENTAGE of royalty)"""
         marketplace_revenue = df.groupby('Marketplace')['Royalty USD'].sum().reset_index()
-        marketplace_revenue = marketplace_revenue.sort_values(by='Royalty USD', ascending=False)
+        # Calculate net revenue (NET_REVENUE_PERCENTAGE of total royalty)
+        marketplace_revenue['Net Revenue'] = marketplace_revenue['Royalty USD'] * NET_REVENUE_PERCENTAGE
+        marketplace_revenue = marketplace_revenue.sort_values(by='Net Revenue', ascending=False)
         
-        fig = px.bar(
-            marketplace_revenue,
-            x='Marketplace',
-            y='Royalty USD',
-            title='Revenue by Marketplace (USD)',
-            text='Royalty USD',
-            template=VIZ_CONFIG['template']
-        )
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=marketplace_revenue['Marketplace'],
+            y=marketplace_revenue['Net Revenue'],
+            text=[f"${val:.2f}" for val in marketplace_revenue['Net Revenue']],
+            textposition='outside',
+            textfont=dict(size=10),
+            hovertemplate=f'<b>%{{x}}</b><br>Net Revenue ({NET_REVENUE_PERCENTAGE:.0%}): $%{{y:.2f}}<extra></extra>',
+            cliponaxis=False,
+            marker_color='rgba(50, 150, 200, 0.7)'
+        ))
         
-        fig.update_traces(texttemplate='$%{text:.2f}', textposition='outside', cliponaxis=False)
         fig.update_layout(
-            xaxis_tickangle=-45,
-            xaxis=dict(automargin=True),
-            yaxis=dict(automargin=True)
+            title=f'Net Revenue by Marketplace (USD) - {NET_REVENUE_PERCENTAGE:.0%} of Total',
+            xaxis_title='Marketplace',
+            yaxis_title='Net Revenue (USD)',
+            height=450,
+            xaxis=dict(
+                tickangle=-45,
+                automargin=True,
+                tickfont=dict(size=10)
+            ),
+            yaxis=dict(automargin=True),
+            template=VIZ_CONFIG['template'],
+            margin=dict(b=100)
         )
         
         return fig
@@ -367,7 +398,7 @@ class SummaryMetrics:
         total_books_sold = df['Net Units Sold'].sum()
         total_revenue_usd = df['Royalty USD'].sum()
         # Deduct 20% for transaction fees and taxes
-        net_revenue_usd = total_revenue_usd * 0.8
+        net_revenue_usd = total_revenue_usd * NET_REVENUE_PERCENTAGE
         
         # Total Royalties Shared: Sum of per-author royalties
         # Each transaction's royalty is divided by author count,

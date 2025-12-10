@@ -4,19 +4,21 @@ Configuration module for Resulam Royalties Dashboard
 from pathlib import Path
 from datetime import datetime
 
-# Project paths
-PROJECT_ROOT = Path(__file__).parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
-
 # Date configuration
 CURRENT_YEAR = datetime.now().year
 LAST_YEAR = CURRENT_YEAR - 1
 
+# Revenue configuration
+NET_REVENUE_PERCENTAGE = 1  # 80% of royalties go to net revenue (after platform/fees)
+
+# Project paths
+PROJECT_ROOT = Path(__file__).parent.parent
+DATA_DIR = PROJECT_ROOT / "data"
+
 # Data file paths - Update these to your actual paths
 MAIN_DIR = r"G:\My Drive\Mbú'ŋwɑ̀'nì\RoyaltiesResulam"
 BOOKS_DATABASE_PATH = Path(MAIN_DIR) / "Resulam_books_database_Amazon_base_de_donnee_livres.csv"
-ROYALTIES_CURRENT_YEAR_PATH = Path(MAIN_DIR) / f"KDP_OrdersResulamBookSales{LAST_YEAR}RoyaltiesReports.xlsx"
-ROYALTIES_HISTORY_PATH = Path(MAIN_DIR) / f"KDP_OrdersResulamBookSales2015_{LAST_YEAR}RoyaltiesReportsHistory.xlsx"
+ROYALTIES_HISTORY_PATH = Path(MAIN_DIR) / f"KDP_OrdersResulamBookSales2015_{CURRENT_YEAR}RoyaltiesReportsHistory.xlsx"
 
 # Author name normalization mapping
 AUTHOR_NORMALIZATION = {

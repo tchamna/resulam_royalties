@@ -15,7 +15,6 @@ from src.dashboard import create_dashboard
 from src.utils.helpers import export_processed_data, validate_data_files
 from src.config import (
     BOOKS_DATABASE_PATH,
-    ROYALTIES_CURRENT_YEAR_PATH,
     ROYALTIES_HISTORY_PATH,
     USE_LIVE_RATES
 )

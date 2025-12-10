@@ -1,0 +1,87 @@
+/* Custom styles for Resulam Royalties Dashboard */
+
+/* Dropdown styling for author selector */
+.Select-menu-outer {
+    display: block !important;
+}
+
+.Select--multi .Select-value {
+    display: inline-block;
+    margin-right: 5px;
+    margin-bottom: 5px;
+}
+
+/* Vertical dropdown menu */
+.Select-menu {
+    max-height: 500px !important;
+}
+
+.Select-option {
+    padding: 10px 15px !important;
+    white-space: normal !important;
+    word-wrap: break-word !important;
+}
+
+.Select-option:before {
+    content: '☐ ' !important;
+    margin-right: 8px;
+    font-weight: bold;
+}
+
+.Select-option.is-selected:before {
+    content: '☑ ' !important;
+    color: #2c3e50;
+}
+
+/* Dropdown focused state */
+.Select-option.is-focused {
+    background-color: #f5f5f5 !important;
+}
+
+.Select-option.is-selected {
+    background-color: #e8f4f8 !important;
+    color: #2c3e50 !important;
+}
+
+/* Checklist styling if using checklist component */
+.author-checklist {
+    columns: 2;
+    column-gap: 20px;
+}
+
+.author-checklist label {
+    display: block;
+    margin-bottom: 8px;
+    cursor: pointer;
+    padding: 5px;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.author-checklist label:hover {
+    background-color: #f0f0f0;
+}
+
+/* Bar chart styling */
+.plotly-graph-div {
+    font-family: Arial, sans-serif;
+}
+
+/* Legend styling */
+.plotly .legend {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+/* Button group spacing */
+.btn-group {
+    display: flex;
+    gap: 10px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .author-checklist {
+        columns: 1;
+    }
+}
