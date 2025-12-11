@@ -456,7 +456,7 @@ class ResulamDashboard:
             prevent_initial_call=True
         )
         
-        # Server-side callback to check for container restarts by monitoring uptime
+        # Server-side callback to check for container restarts by checking start time
         @self.app.callback(
             Output('reload-trigger', 'data-reload'),
             Input('refresh-interval', 'n_intervals'),
@@ -465,15 +465,23 @@ class ResulamDashboard:
         def check_container_restart(n):
             """Check if container recently restarted"""
             try:
-                # Read container uptime from /proc/uptime
-                with open('/proc/uptime', 'r') as f:
-                    uptime_seconds = float(f.read().split()[0])
+                import time
+                import os
                 
-                # If uptime < 120 seconds (2 minutes), container recently restarted
-                # Return True to trigger page reload
-                if uptime_seconds < 120:
-                    print(f"🔄 Container uptime: {uptime_seconds:.1f}s - Triggering page reload")
-                    return True
+                # Check if the startup marker file exists
+                marker_file = '/tmp/.container_start_time'
+                if os.path.exists(marker_file):
+                    with open(marker_file, 'r') as f:
+                        start_time = float(f.read().strip())
+                    
+                    current_time = time.time()
+                    uptime_seconds = current_time - start_time
+                    
+                    # If uptime < 120 seconds (2 minutes), container recently restarted
+                    # Return True to trigger page reload
+                    if uptime_seconds < 120:
+                        print(f"🔄 Container uptime: {uptime_seconds:.1f}s - Triggering page reload")
+                        return True
                 
                 # Normal operation - no reload needed
                 return False

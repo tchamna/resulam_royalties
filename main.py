@@ -29,6 +29,17 @@ from src.config import (
 def main():
     """Main application function"""
     
+    # Create startup marker file for container restart detection
+    import time
+    marker_file = '/tmp/.container_start_time' if os.name != 'nt' else 'C:\\temp\\.container_start_time'
+    try:
+        os.makedirs(os.path.dirname(marker_file), exist_ok=True)
+        with open(marker_file, 'w') as f:
+            f.write(str(time.time()))
+        print(f"\n✅ Created startup marker: {marker_file}")
+    except Exception as e:
+        print(f"\n⚠️  Could not create startup marker: {e}")
+    
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Resulam Royalties Dashboard')
     parser.add_argument('--host', type=str, default='127.0.0.1', help='Host to bind to (default: 127.0.0.1)')
