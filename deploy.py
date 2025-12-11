@@ -100,7 +100,7 @@ Environment="PYTHONPATH=/home/ec2-user/apps/resulam-royalties"
 Environment="USE_S3_DATA=true"
 Environment="S3_BUCKET={S3_BUCKET}"
 Environment="AWS_DEFAULT_REGION={AWS_REGION}"
-ExecStart=/home/ec2-user/apps/resulam-royalties/venv/bin/python main.py --host 0.0.0.0 --port 8050
+ExecStart=/home/ec2-user/apps/resulam-royalties/venv/bin/python main.py --host 127.0.0.1 --port 8051
 Restart=always
 RestartSec=10
 StartLimitInterval=60s
@@ -125,7 +125,7 @@ WantedBy=multi-user.target
     # Step 5: Create nginx configuration
     print("\nStep 5: Configuring nginx...")
     nginx_template = """upstream resulam_app {{
-    server 127.0.0.1:{port};
+    server 127.0.0.1:8051;
 }}
 
 server {{
