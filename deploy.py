@@ -251,7 +251,9 @@ def deploy():
            f"if [ ! -d venv ]; then python3 -m venv venv; fi && "
            f"source venv/bin/activate && "
            f"pip install -q --upgrade pip setuptools wheel && "
-           f"pip install -q --no-cache-dir --upgrade numpy pandas")
+           # Fix numpy/pandas compatibility - uninstall first, then reinstall together
+           f"pip uninstall -y numpy pandas 2>/dev/null || true && "
+           f"pip install -q --no-cache-dir 'numpy>=1.24.0,<2.0.0' 'pandas>=2.0.0' --force-reinstall")
     
     # Install from requirements.txt if it exists
     cmd += f" && if [ -f requirements.txt ]; then pip install -q --no-cache-dir -r requirements.txt; fi"
