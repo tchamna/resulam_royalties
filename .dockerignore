@@ -21,7 +21,9 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Data files (will be mounted or downloaded)
+# Data files (will be mounted or downloaded from S3)
+data/*.xlsx
+data/*.csv
 data/exchange_rates_cache.json
 
 # Logs

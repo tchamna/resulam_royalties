@@ -18,6 +18,7 @@ print(f"\n🔍 DEBUG: USE_S3_DATA environment variable = {os.getenv('USE_S3_DATA
 from src.data import load_and_process_all_data
 from src.dashboard import create_dashboard
 from src.utils.helpers import export_processed_data, validate_data_files
+from src.utils.s3_sync import sync_data_on_startup
 from src.config import (
     BOOKS_DATABASE_PATH,
     ROYALTIES_HISTORY_PATH,
@@ -38,6 +39,10 @@ def main():
     print("\n" + "="*70)
     print("📚 RESULAM ROYALTIES DASHBOARD")
     print("="*70)
+    
+    # Sync data from S3 if configured
+    print("\n📡 Checking for S3 data sync...")
+    sync_data_on_startup()
     
     # Show exchange rate configuration
     rate_source = "🌐 LIVE (from API)" if USE_LIVE_RATES else "🔒 HARDCODED"
