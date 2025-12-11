@@ -64,14 +64,15 @@ jobs:
             # Navigate to app directory
             cd ${{ env.APP_DIR }}
             
-            # Stash any local changes (like generated CSV files) before pulling
-            git stash || true
+            # Remove CSV files that are no longer tracked in git
+            rm -f royalties_exploded_2024.csv royalties_per_author_2024.csv royalties_resulambooks_from_2015_2024_history_df.csv || true
+            
+            # Reset any merge conflicts and force clean state
+            git reset --hard HEAD || true
+            git clean -fd || true
             
             # Pull latest code
             git pull origin main
-            
-            # Restore stashed changes (data files)
-            git stash pop || true
             
             # Download data files from S3 if configured
             if [ ! -z "${{ env.S3_DATA_FILES }}" ]; then
