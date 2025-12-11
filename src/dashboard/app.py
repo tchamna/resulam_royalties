@@ -588,6 +588,9 @@ class ResulamDashboard:
                 f"${metrics['net_revenue_usd']:,.2f}",
                 str(metrics['unique_titles']),
                 str(metrics['unique_authors']),
+                f"{int(total_refunded):,}"
+            )
+        
         @self.app.callback(
             Output("sales-trend-title", "children"),
             Output("sales-trend-chart", "figure"),
