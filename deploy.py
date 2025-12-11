@@ -23,6 +23,7 @@ import os
 import json
 from datetime import datetime
 from urllib.parse import urlparse
+from pathlib import Path
 
 # ============================================================================
 # CONFIGURATION - Read from environment variables or defaults
@@ -79,13 +80,17 @@ DOMAIN_NAME = get_env("DOMAIN_NAME")
 AWS_ACCESS_KEY_ID = get_env("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = get_env("AWS_SECRET_ACCESS_KEY")
 
-# Optional: S3 data files to download (pipe-separated)
-# Can be set via: export S3_DATA_FILES="file1.csv|file2.xlsx"
-S3_DATA_FILES_ENV = get_env("S3_DATA_FILES", "")
-if S3_DATA_FILES_ENV:
-    S3_DATA_FILES = S3_DATA_FILES_ENV.split("|")
-else:
-    S3_DATA_FILES = []
+
+# Local data directory for uploading to S3
+LOCAL_DATA_DIR = Path(r"G:\My Drive\Mbú'ŋwɑ̀'nì\RoyaltiesResulam")
+
+# S3 data files to upload/download
+# If your project does not require S3 data files, set S3_DATA_FILES = []
+S3_DATA_FILES = [
+    "Resulam_books_database_Amazon_base_de_donnee_livres.csv",
+    "KDP_OrdersResulamBookSales2015_2025RoyaltiesReportsHistory.xlsx"
+]
+
 
 # Optional: Python packages (pipe-separated, or leave empty to use requirements.txt)
 # Can be set via: export PYTHON_PACKAGES="package1==1.0|package2==2.0"
@@ -94,6 +99,7 @@ if PYTHON_PACKAGES_ENV:
     PYTHON_PACKAGES = PYTHON_PACKAGES_ENV.split("|")
 else:
     PYTHON_PACKAGES = []
+
 
 # ============================================================================
 # DERIVED CONFIGURATION
@@ -123,6 +129,7 @@ def print_config():
     print(f"   DOMAIN_NAME:         {DOMAIN_NAME}")
     print(f"   S3_BUCKET:           {S3_BUCKET}")
     print(f"   AWS_REGION:          {AWS_REGION}")
+    print(f"   LOCAL_DATA_DIR:      {LOCAL_DATA_DIR}")
     if S3_DATA_FILES:
         print(f"   S3_DATA_FILES:       {', '.join(S3_DATA_FILES)}")
     else:
@@ -215,14 +222,130 @@ def configure_https():
         print(f"⚠ HTTPS configuration warning: {e}")
         return True  # Don't fail deployment
 
+def upload_data_to_s3():
+    """Upload local data files to S3 bucket"""
+    try:
+        import boto3
+        from botocore.exceptions import ClientError, NoCredentialsError
+    except ImportError:
+        print("⚠️  boto3 not installed. Install with: pip install boto3")
+        return False
+    
+    print("\n" + "="*70)
+    print("📤 UPLOAD DATA FILES TO S3")
+    print("="*70)
+    
+    if not S3_BUCKET or not S3_DATA_FILES:
+        print("⚠️  S3_BUCKET or S3_DATA_FILES not configured. Skipping upload.")
+        return True
+    
+    if not AWS_ACCESS_KEY_ID or not AWS_SECRET_ACCESS_KEY:
+        print("❌ AWS credentials not set. Cannot upload to S3.")
+        return False
+    
+    print(f"\n📦 S3 Bucket: {S3_BUCKET}")
+    print(f"🌍 AWS Region: {AWS_REGION}")
+    print(f"📁 Local Data Directory: {LOCAL_DATA_DIR}")
+    print(f"\n📋 Files to upload:")
+    
+    # Check if files exist locally
+    missing_files = []
+    for file in S3_DATA_FILES:
+        file_path = LOCAL_DATA_DIR / file
+        if file_path.exists():
+            size = file_path.stat().st_size / (1024 * 1024)  # MB
+            print(f"   ✓ {file} ({size:.2f} MB)")
+        else:
+            print(f"   ⚠️  {file} - NOT FOUND locally (will check S3)")
+            missing_files.append(file)
+    
+    # If all files are missing locally, assume they're already in S3
+    if len(missing_files) == len(S3_DATA_FILES):
+        print(f"\n💡 No local files found. Assuming data is already in S3.")
+        return True
+    
+    # Create S3 client
+    try:
+        s3_client = boto3.client(
+            's3',
+            region_name=AWS_REGION,
+            aws_access_key_id=AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=AWS_SECRET_ACCESS_KEY
+        )
+        
+        # Test bucket access
+        s3_client.head_bucket(Bucket=S3_BUCKET)
+        print(f"\n✅ S3 bucket '{S3_BUCKET}' accessible")
+        
+    except ClientError as e:
+        error_code = e.response['Error']['Code']
+        if error_code == '404':
+            print(f"\n❌ S3 bucket '{S3_BUCKET}' does not exist.")
+            return False
+        elif error_code == '403':
+            print(f"\n❌ Access denied to bucket '{S3_BUCKET}'.")
+            return False
+        else:
+            raise
+    except NoCredentialsError:
+        print("\n❌ AWS credentials invalid.")
+        return False
+    except Exception as e:
+        print(f"\n❌ Error connecting to S3: {e}")
+        return False
+    
+    # Upload files that exist locally
+    print(f"\n📤 Uploading files...")
+    success_count = 0
+    skip_count = 0
+    
+    for file in S3_DATA_FILES:
+        file_path = LOCAL_DATA_DIR / file
+        if not file_path.exists():
+            # Check if file exists in S3
+            try:
+                s3_client.head_object(Bucket=S3_BUCKET, Key=file)
+                print(f"   ✓ {file} - Already in S3, skipping")
+                skip_count += 1
+                continue
+            except ClientError:
+                print(f"   ⚠️  {file} - Not found locally or in S3")
+                continue
+        
+        try:
+            print(f"   Uploading {file}...", end=' ', flush=True)
+            s3_client.upload_file(
+                str(file_path),
+                S3_BUCKET,
+                file,
+                ExtraArgs={'ContentType': 'application/octet-stream'}
+            )
+            print("✅")
+            success_count += 1
+        except Exception as e:
+            print(f"❌ Error: {e}")
+    
+    print(f"\n📊 Upload Summary:")
+    print(f"   Uploaded: {success_count}")
+    print(f"   Skipped (already in S3): {skip_count}")
+    print(f"   Total files: {len(S3_DATA_FILES)}")
+    
+    return True
+
 def deploy():
     print("\n" + "="*60)
     print("UNIVERSAL EC2 DEPLOYMENT")
     print("="*60)
     print_config()
     
-    # Step 0: Configure AWS Security Group
-    print("Step 0: Configuring AWS security group...")
+    # Step 0a: Upload data to S3 (if local files exist)
+    if '--upload-data' in sys.argv or '--all' in sys.argv:
+        print("\nStep 0a: Uploading data to S3...")
+        if not upload_data_to_s3():
+            print("⚠️  Data upload failed, but continuing with deployment...")
+    
+    # Step 0b: Configure AWS Security Group
+    print("\nStep 0b: Configuring AWS security group...")
     sg_result = configure_security_group()
     if not sg_result:
         print("⚠ MANUAL STEP REQUIRED:")
@@ -608,16 +731,22 @@ if __name__ == '__main__':
             success = setup_github_secrets('.env')
             sys.exit(0 if success else 1)
         
-        # Check for --all flag (setup secrets + deploy)
+        # Check for --upload-data flag
+        if '--upload-data' in sys.argv:
+            success = upload_data_to_s3()
+            sys.exit(0 if success else 1)
+        
+        # Check for --all flag (upload data + deploy)
         if '--all' in sys.argv:
-            print("\n🚀 Full Setup: GitHub Secrets + Deployment\n")
-            secrets_ok = setup_github_secrets('.env')
-            if not secrets_ok:
-                print("\n⚠️  GitHub secrets setup had issues, but continuing with deployment...")
+            print("\n🚀 Full Workflow: Upload Data + Deployment\n")
+            upload_ok = upload_data_to_s3()
+            if not upload_ok:
+                print("\n⚠️  Data upload had issues, but continuing with deployment...")
             print("\n" + "=" * 70)
             success = deploy()
             sys.exit(0 if success else 1)
         
+        # Default: just deploy (no upload)
         success = deploy()
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:
