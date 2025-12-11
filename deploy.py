@@ -1,8 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Resulam Royalties - Complete EC2 Deployment Script
-Single command deployment with all configs, PYTHONPATH handling, and S3 data files
+Universal EC2 Deployment Script
+Self-contained deployment for any GitHub repository with automated setup.
+Handles: Repository cloning, venv setup, S3 data sync, systemd service, nginx proxy, and HTTPS.
+
+Configuration Parameters:
+- EC2_IP: EC2 instance IP address
+- EC2_USER: SSH user on EC2 instance
+- SSH_KEY: Local path to SSH private key
+- GIT_REPO: GitHub repository URL (https://github.com/user/repo.git)
+- APP_PORT: Public port (typically 8050)
+- APP_DIR: Remote app directory path
+- S3_BUCKET: S3 bucket name for data files (optional)
+- AWS_REGION: AWS region
+- DOMAIN_NAME: Domain name for HTTPS
 """
 
 import subprocess
@@ -10,21 +22,47 @@ import sys
 import os
 import json
 from datetime import datetime
+from urllib.parse import urlparse
+
+# ============================================================================
+# CONFIGURATION - Update these values for your deployment
+# ============================================================================
 
 EC2_IP = "18.208.117.82"
 EC2_USER = "ec2-user"
-SSH_KEY = r'C:\Users\tcham\Downloads\test-rag.pem'
+SSH_KEY_PATH = r'C:\Users\tcham\Downloads\test-rag.pem'
+GIT_REPO = "https://github.com/tchamna/resulam_royalties.git"  # Change this for other repos
 APP_PORT = 8050
 APP_DIR = "/home/ec2-user/apps/resulam-royalties"
 S3_BUCKET = "resulam-royalties"
 AWS_REGION = "us-east-1"
+DOMAIN_NAME = "resulam-royalties.tchamna.com"
+
+# Optional: S3 data files to download (leave empty list to skip S3 download)
+# If your project doesnt need S3 data files, set S3_DATA_FILES to None and S3_DATA_FILES to []
+S3_DATA_FILES = [
+    "Resulam_books_database_Amazon_base_de_donnee_livres.csv",
+    f"KDP_OrdersResulamBookSales2015_{datetime.now().year}RoyaltiesReportsHistory.xlsx"
+]
+
+# Optional: Python packages - read from requirements.txt if it exists
+# If requirements.txt exists in the repo, it will be used automatically
+# Leave this empty list to use only requirements.txt
+PYTHON_PACKAGES = []
+
+# ============================================================================
+# DERIVED CONFIGURATION
+# ============================================================================
+
 CURRENT_YEAR = datetime.now().year
-DOMAIN_NAME = "resulam-royalties.tchamna.com"  
+APP_NAME = os.path.basename(urlparse(GIT_REPO).path).replace(".git", "")
+SYSTEMD_SERVICE = f"{APP_NAME}.service"
+NGINX_CONFIG = f"/etc/nginx/conf.d/{APP_NAME}.conf"
 
 def ssh(cmd):
     """Execute command on EC2 via SSH"""
     result = subprocess.run(
-        ['ssh', '-i', SSH_KEY, '-o', 'StrictHostKeyChecking=no', 
+        ['ssh', '-i', SSH_KEY_PATH, '-o', 'StrictHostKeyChecking=no', 
          f'{EC2_USER}@{EC2_IP}', cmd],
         capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60
     )
@@ -91,7 +129,7 @@ def configure_https():
         print(f"  To obtain SSL certificate for {DOMAIN_NAME}:")
         print(f"  1. Ensure DNS points {DOMAIN_NAME} → {EC2_IP}")
         print(f"  2. SSH to instance:")
-        print(f"     ssh -i {SSH_KEY} {EC2_USER}@{EC2_IP}")
+        print(f"     ssh -i {SSH_KEY_PATH} {EC2_USER}@{EC2_IP}")
         print(f"  3. Run Certbot:")
         print(f"     sudo certbot --nginx -d {DOMAIN_NAME}")
         print(f"  4. Follow prompts to set up HTTPS")
@@ -124,13 +162,13 @@ def deploy():
     # Step 1: Clone/update repository
     print("Step 1: Setting up repository...")
     cmd = (f"mkdir -p /home/{EC2_USER}/apps && cd /home/{EC2_USER}/apps && "
-           f"if [ -d resulam-royalties ]; then cd resulam-royalties && git pull origin main 2>&1 | grep -v 'Already up'; "
-           f"else git clone https://github.com/tchamna/resulam_royalties.git resulam-royalties; fi")
+           f"if [ -d {APP_NAME} ]; then cd {APP_NAME} && git pull origin main 2>&1 | grep -v 'Already up'; "
+           f"else git clone {GIT_REPO} {APP_NAME}; fi")
     success, out, err = ssh(cmd)
-    if not success and "resulam-royalties" not in out:
+    if not success and APP_NAME not in out:
         print(f"✗ ERROR: {err}")
         return False
-    print("✓ Repository ready")
+    print(f"✓ Repository {APP_NAME} ready")
     
     # Step 2: Setup Python venv and install dependencies
     print("\nStep 2: Setting up Python environment...")
@@ -138,57 +176,69 @@ def deploy():
            f"if [ ! -d venv ]; then python3 -m venv venv; fi && "
            f"source venv/bin/activate && "
            f"pip install -q --upgrade pip setuptools wheel && "
-           f"pip install -q --no-cache-dir --upgrade numpy pandas && "
-           f"pip install -q --no-cache-dir dash==2.14.2 dash-bootstrap-components==1.5.0 openpyxl==3.1.2 requests==2.31.0 gunicorn==21.2.0")
+           f"pip install -q --no-cache-dir --upgrade numpy pandas")
+    
+    # Install from requirements.txt if it exists
+    cmd += f" && if [ -f requirements.txt ]; then pip install -q --no-cache-dir -r requirements.txt; fi"
+    
+    # Install additional packages if specified
+    if PYTHON_PACKAGES:
+        packages_list = " ".join(PYTHON_PACKAGES)
+        cmd += f" && pip install -q --no-cache-dir {packages_list}"
+    
     success, out, err = ssh(cmd)
     if not success:
         print(f"✗ ERROR: {err}")
         return False
     print("✓ Python environment ready with dependencies")
     
-    # Step 3: Download data files from S3
-    print("\nStep 3: Downloading data files from S3...")
-    cmd = (f"cd {APP_DIR} && "
-           f"mkdir -p data && "
-           f"pip install -q boto3 && "
-           f"python3 << 'ENDS3'\n"
-           f"import boto3\n"
-           f"import os\n"
-           f"os.makedirs('data', exist_ok=True)\n"
-           f"s3 = boto3.client('s3', region_name='{AWS_REGION}')\n"
-           f"files_to_download = [\n"
-           f"    ('Resulam_books_database_Amazon_base_de_donnee_livres.csv', 'data/Resulam_books_database_Amazon_base_de_donnee_livres.csv'),\n"
-           f"    ('KDP_OrdersResulamBookSales2015_{CURRENT_YEAR}RoyaltiesReportsHistory.xlsx', 'data/KDP_OrdersResulamBookSales2015_{CURRENT_YEAR}RoyaltiesReportsHistory.xlsx')\n"
-           f"]\n"
-           f"for src, dst in files_to_download:\n"
-           f"    try:\n"
-           f"        s3.download_file('{S3_BUCKET}', src, dst)\n"
-           f"        print(f'Downloaded {{src}} to {{dst}}')\n"
-           f"    except Exception as e:\n"
-           f"        print(f'Warning: Could not download {{src}}: {{e}}')\n"
-           f"ENDS3")
-    success, out, err = ssh(cmd)
-    if not success:
-        print(f"⚠ Warning: Could not download all S3 files. Continuing with cache...")
+    # Step 3: Download data files from S3 (optional)
+    print("\nStep 3: Handling data files...")
+    if S3_DATA_FILES:
+        print("  Downloading data files from S3...")
+        cmd = (f"cd {APP_DIR} && "
+               f"mkdir -p data && "
+               f"pip install -q boto3 && "
+               f"python3 << 'ENDS3'\n"
+               f"import boto3\n"
+               f"import os\n"
+               f"os.makedirs('data', exist_ok=True)\n"
+               f"s3 = boto3.client('s3', region_name='{AWS_REGION}')\n"
+               f"files_to_download = [\n")
+        for file in S3_DATA_FILES:
+            cmd += f"    ('{file}', 'data/{file}'),\n"
+        cmd += (f"]\n"
+               f"for src, dst in files_to_download:\n"
+               f"    try:\n"
+               f"        s3.download_file('{S3_BUCKET}', src, dst)\n"
+               f"        print(f'Downloaded {{src}} to {{dst}}')\n"
+               f"    except Exception as e:\n"
+               f"        print(f'Warning: Could not download {{src}}: {{e}}')\n"
+               f"ENDS3")
+        success, out, err = ssh(cmd)
+        if not success:
+            print(f"  ⚠ Warning: S3 download failed or skipped")
+        else:
+            print("  ✓ Data files downloaded from S3")
     else:
-        print("✓ Data files downloaded from S3")
+        print("  ⚠ Skipped: No S3 data files configured")
     
     # Step 4: Create systemd service with S3 environment
     print("\nStep 4: Creating systemd service...")
     service_template = """[Unit]
-Description=Resulam Royalties Dashboard
+Description={app_name} Dashboard
 After=network.target
 
 [Service]
 Type=simple
 User=ec2-user
-WorkingDirectory=/home/ec2-user/apps/resulam-royalties
-Environment="PATH=/home/ec2-user/apps/resulam-royalties/venv/bin"
-Environment="PYTHONPATH=/home/ec2-user/apps/resulam-royalties"
+WorkingDirectory={app_dir}
+Environment="PATH={app_dir}/venv/bin"
+Environment="PYTHONPATH={app_dir}"
 Environment="USE_S3_DATA=true"
-Environment="S3_BUCKET={S3_BUCKET}"
-Environment="AWS_DEFAULT_REGION={AWS_REGION}"
-ExecStart=/home/ec2-user/apps/resulam-royalties/venv/bin/python main.py --host 127.0.0.1 --port 8051
+Environment="S3_BUCKET={s3_bucket}"
+Environment="AWS_DEFAULT_REGION={aws_region}"
+ExecStart={app_dir}/venv/bin/python main.py --host 127.0.0.1 --port 8051
 Restart=always
 RestartSec=10
 StartLimitInterval=60s
@@ -196,23 +246,23 @@ StartLimitBurst=3
 
 [Install]
 WantedBy=multi-user.target
-""".format(S3_BUCKET=S3_BUCKET, AWS_REGION=AWS_REGION)
+""".format(app_name=APP_NAME, app_dir=APP_DIR, s3_bucket=S3_BUCKET, aws_region=AWS_REGION)
     
     # Write service file using heredoc
-    cmd = (f"cat > /tmp/resulam.service << 'ENDSERVICE'\n"
+    cmd = (f"cat > /tmp/{APP_NAME}.service << 'ENDSERVICE'\n"
            f"{service_template}\n"
            f"ENDSERVICE\n"
-           f"sudo mv /tmp/resulam.service /etc/systemd/system/resulam-royalties.service && "
-           f"sudo chmod 644 /etc/systemd/system/resulam-royalties.service")
+           f"sudo mv /tmp/{APP_NAME}.service /etc/systemd/system/{SYSTEMD_SERVICE} && "
+           f"sudo chmod 644 /etc/systemd/system/{SYSTEMD_SERVICE}")
     success, out, err = ssh(cmd)
     if not success:
         print(f"✗ ERROR: {err}")
         return False
-    print("✓ Systemd service created with S3 environment")
+    print(f"✓ Systemd service {SYSTEMD_SERVICE} created")
     
     # Step 5: Create nginx configuration
     print("\nStep 5: Configuring nginx...")
-    nginx_template = """upstream resulam_app {{
+    nginx_template = """upstream {app_name}_upstream {{
     server 127.0.0.1:8051;
 }}
 
@@ -229,7 +279,7 @@ server {{
 
     # Serve app over HTTP
     location / {{
-        proxy_pass http://resulam_app;
+        proxy_pass http://{app_name}_upstream;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -254,7 +304,7 @@ server {{
 #     ssl_session_timeout 10m;
 #
 #     location / {{
-#         proxy_pass http://resulam_app;
+#         proxy_pass http://{app_name}_upstream;
 #         proxy_http_version 1.1;
 #         proxy_set_header Host $host;
 #         proxy_set_header X-Real-IP $remote_addr;
@@ -270,12 +320,12 @@ server {{
 #     server_name {domain};
 #     return 301 https://$host$request_uri;
 # }}
-""".format(domain=DOMAIN_NAME)
+""".format(app_name=APP_NAME, domain=DOMAIN_NAME)
     
-    cmd = (f"cat > /tmp/resulam.conf << 'ENDNGINX'\n"
+    cmd = (f"cat > /tmp/{APP_NAME}.conf << 'ENDNGINX'\n"
            f"{nginx_template}\n"
            f"ENDNGINX\n"
-           f"sudo mv /tmp/resulam.conf /etc/nginx/conf.d/resulam-royalties.conf")
+           f"sudo mv /tmp/{APP_NAME}.conf {NGINX_CONFIG}")
     success, out, err = ssh(cmd)
     if not success:
         print(f"✗ ERROR writing nginx config: {err}")
@@ -290,19 +340,19 @@ server {{
     # Step 6: Reload systemd and start service
     print("\nStep 6: Starting service...")
     cmd = (f"sudo systemctl daemon-reload && "
-           f"sudo systemctl enable resulam-royalties && "
-           f"sudo systemctl restart resulam-royalties && "
+           f"sudo systemctl enable {SYSTEMD_SERVICE} && "
+           f"sudo systemctl restart {SYSTEMD_SERVICE} && "
            f"sleep 2")
     success, out, err = ssh(cmd)
     
     # Check if service is running
-    cmd = "sudo systemctl is-active resulam-royalties"
+    cmd = f"sudo systemctl is-active {SYSTEMD_SERVICE}"
     success, out, err = ssh(cmd)
     if success:
         print("✓ Service started successfully")
     else:
         print("⚠ Service may not have started. Checking logs...")
-        cmd = "sudo journalctl -u resulam-royalties -n 15 --no-pager"
+        cmd = f"sudo journalctl -u {SYSTEMD_SERVICE} -n 15 --no-pager"
         success, logs, _ = ssh(cmd)
         if logs:
             print(logs[-400:] if len(logs) > 400 else logs)
@@ -345,18 +395,21 @@ server {{
     print("   4. Select redirect HTTP→HTTPS when prompted")
     print("   5. Certificates auto-renew daily")
     print("\n📋 CONFIGURATION:")
+    print("   Repository:     {0}".format(GIT_REPO))
+    print("   App Name:       {0}".format(APP_NAME))
     print("   Domain:         {0}".format(DOMAIN_NAME))
     print("   App Directory:  {0}".format(APP_DIR))
-    print("   Service Name:   resulam-royalties")
+    print("   Service Name:   {0}".format(SYSTEMD_SERVICE))
+    print("   Nginx Config:   {0}".format(NGINX_CONFIG))
     print("   Internal Port:  8051 (127.0.0.1)")
     print("   Public Port:    80/443 (via nginx)")
     print("   PYTHONPATH:     {0}".format(APP_DIR))
     print("   Venv:           {0}/venv".format(APP_DIR))
     print("\n💡 MANAGE SERVICE:")
-    print("   ssh -i {0} {1}@{2}".format(SSH_KEY, EC2_USER, EC2_IP))
-    print("   sudo systemctl status resulam-royalties")
-    print("   sudo systemctl restart resulam-royalties")
-    print("   sudo journalctl -u resulam-royalties -f")
+    print("   ssh -i {0} {1}@{2}".format(SSH_KEY_PATH, EC2_USER, EC2_IP))
+    print("   sudo systemctl status {0}".format(SYSTEMD_SERVICE))
+    print("   sudo systemctl restart {0}".format(SYSTEMD_SERVICE))
+    print("   sudo journalctl -u {0} -f".format(SYSTEMD_SERVICE))
     print("\n📜 CERTBOT COMMANDS:")
     print("   sudo certbot renew --dry-run  # Test auto-renewal")
     print("   sudo certbot certificates     # View installed certs")
