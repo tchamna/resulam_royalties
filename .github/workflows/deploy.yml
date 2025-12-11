@@ -84,10 +84,10 @@ jobs:
             fi
             
             # Stop and remove existing container
-            docker-compose down || true
+            docker compose down || true
             
             # Build and start new container
-            docker-compose up -d --build
+            docker compose up -d --build
             
             # Wait for container to be healthy
             echo "⏳ Waiting for container to be healthy..."

@@ -6,6 +6,11 @@ __pycache__/
 # C extensions
 *.so
 
+# Generated/processed data files (should be downloaded from S3 or generated at runtime)
+royalties_exploded_2024.csv
+royalties_per_author_2024.csv
+royalties_resulambooks_from_2015_2024_history_df.csv
+
 # Distribution / packaging
 .Python
 build/
