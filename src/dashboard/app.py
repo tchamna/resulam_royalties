@@ -423,7 +423,7 @@ class ResulamDashboard:
             ),
             
             # Store to track if we've already reloaded for this container start
-            dcc.Store(id='reload-state', data={'last_start_time': 0, 'data_hash': '', 'has_reloaded': False}),
+            dcc.Store(id='reload-state', storage_type='local', data={'last_start_time': 0, 'has_reloaded': False}),
             
             # Hidden div to trigger page reload via clientside callback
             html.Div(id='reload-trigger', style={'display': 'none'}),
@@ -472,7 +472,6 @@ class ResulamDashboard:
             try:
                 import time
                 import os
-                import hashlib
                 
                 # Check if the startup marker file exists
                 marker_file = '/tmp/.container_start_time'
@@ -480,44 +479,33 @@ class ResulamDashboard:
                     with open(marker_file, 'r') as f:
                         start_time = float(f.read().strip())
                     
-                    # Calculate a hash of current data to detect changes
-                    data_files = [
-                        'data/KDP_OrdersResulamBookSales2015_2025RoyaltiesReportsHistory.xlsx',
-                        'data/Resulam_books_database_Amazon_base_de_donnee_livres.csv'
-                    ]
-                    data_hash = ''
-                    for file_path in data_files:
-                        if os.path.exists(file_path):
-                            data_hash += str(os.path.getmtime(file_path))
-                    data_hash = hashlib.md5(data_hash.encode()).hexdigest()[:8]
-                    
                     # Check if this is a NEW container start (different from last known start)
                     last_start_time = reload_state.get('last_start_time', 0) if reload_state else 0
-                    last_data_hash = reload_state.get('data_hash', '') if reload_state else ''
+                    has_reloaded = reload_state.get('has_reloaded', False) if reload_state else False
                     
-                    # If start time OR data hash is different, we might need to reload
-                    if start_time != last_start_time or data_hash != last_data_hash:
-                        # New container or data change detected
+                    # Only process if this is a different container instance
+                    if start_time != last_start_time:
+                        # New container detected
                         current_time = time.time()
                         uptime_seconds = current_time - start_time
                         
-                        # Extended window: 10 minutes (600 seconds) instead of 2 minutes
-                        if uptime_seconds < 600:
-                            print(f"🔄 Container uptime: {uptime_seconds:.1f}s - Data hash: {data_hash} - Triggering page reload")
+                        # Only trigger reload if uptime < 600 seconds (10 minutes) AND we haven't already reloaded
+                        if uptime_seconds < 600 and not has_reloaded:
+                            print(f"🔄 New container detected - uptime: {uptime_seconds:.1f}s - Triggering page reload")
                             # Update state: mark this container start as seen and reloaded
-                            return True, {'last_start_time': start_time, 'data_hash': data_hash, 'has_reloaded': True}
+                            return True, {'last_start_time': start_time, 'has_reloaded': True}
                         else:
-                            # Old container, just update the state without reloading
-                            return False, {'last_start_time': start_time, 'data_hash': data_hash, 'has_reloaded': False}
+                            # Either too old or already reloaded - just update state without reloading
+                            return False, {'last_start_time': start_time, 'has_reloaded': has_reloaded}
                     
-                    # Same container, already processed
+                    # Same container instance - no action needed
                     return False, reload_state
                 
                 # Normal operation - no reload needed
                 return False, reload_state
             except Exception as e:
                 print(f"❌ Error checking uptime: {e}")
-                return False, reload_state if reload_state else {'last_start_time': 0, 'data_hash': '', 'has_reloaded': False}
+                return False, reload_state if reload_state else {'last_start_time': 0, 'has_reloaded': False}
         
         # Callback to update the year-filter-store when a year is selected
         @self.app.callback(
