@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Resulam Royalties - Complete EC2 Deployment Script
 Single command deployment with all configs, PYTHONPATH handling, and S3 data files
