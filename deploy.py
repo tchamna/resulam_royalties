@@ -18,7 +18,7 @@ def ssh(cmd):
     result = subprocess.run(
         ['ssh', '-i', SSH_KEY, '-o', 'StrictHostKeyChecking=no', 
          f'{EC2_USER}@{EC2_IP}', cmd],
-        capture_output=True, text=True, timeout=60
+        capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60
     )
     return result.returncode == 0, result.stdout, result.stderr
 
@@ -138,7 +138,10 @@ server {{
         print("⚠ Service may not have started. Checking logs...")
         cmd = "sudo journalctl -u resulam-royalties -n 15 --no-pager"
         success, logs, _ = ssh(cmd)
-        print(logs[-400:] if len(logs) > 400 else logs)
+        if logs:
+            print(logs[-400:] if len(logs) > 400 else logs)
+        else:
+            print("(No logs available)")
     
     # Step 6: Restart nginx
     print("\nStep 6: Restarting nginx...")
