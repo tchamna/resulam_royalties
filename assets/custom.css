@@ -79,6 +79,23 @@
     gap: 10px;
 }
 
+/* Author earnings list styling */
+.author-list-item {
+    color: rgba(255, 255, 255, 0.92) !important;
+}
+
+body.light-mode .author-list-item {
+    color: #212529 !important;
+}
+
+.author-list-total {
+    color: #00DDFF !important;
+}
+
+body.light-mode .author-list-total {
+    color: #00DDFF !important;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .author-checklist {

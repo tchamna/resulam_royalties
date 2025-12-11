@@ -1,5 +1,5 @@
 """
-Author trends visualization for earnings over time
+Earning history visualization for royalties over time
 """
 import pandas as pd
 import plotly.graph_objects as go
@@ -8,8 +8,8 @@ from typing import List, Optional
 from ..config import VIZ_CONFIG, AUTHOR_NORMALIZATION, NET_REVENUE_PERCENTAGE
 
 
-class AuthorTrendCharts:
-    """Generate author earnings trend charts"""
+class EarningHistoryCharts:
+    """Generate earning history charts for authors"""
     
     @staticmethod
     def normalize_author_name(name: str) -> str:
@@ -22,7 +22,7 @@ class AuthorTrendCharts:
         # Group by year and author, sum earnings
         df_copy = df.copy()
         df_copy['Authors_Normalized'] = df_copy['Authors_Exploded'].apply(
-            lambda x: AuthorTrendCharts.normalize_author_name(x)
+            lambda x: EarningHistoryCharts.normalize_author_name(x)
         )
         
         # Exclude Resulam
@@ -76,7 +76,7 @@ class AuthorTrendCharts:
         """Create bar chart showing earnings per year for selected authors"""
         df_copy = df.copy()
         df_copy['Authors_Normalized'] = df_copy['Authors_Exploded'].apply(
-            lambda x: AuthorTrendCharts.normalize_author_name(x)
+            lambda x: EarningHistoryCharts.normalize_author_name(x)
         )
         
         # Exclude Resulam
@@ -133,7 +133,7 @@ class AuthorTrendCharts:
     def get_all_authors(df: pd.DataFrame) -> List[str]:
         """Get list of all unique authors"""
         authors_normalized = df['Authors_Exploded'].apply(
-            lambda x: AuthorTrendCharts.normalize_author_name(x)
+            lambda x: EarningHistoryCharts.normalize_author_name(x)
         ).unique()
         
         # Exclude Resulam

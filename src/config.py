@@ -9,7 +9,7 @@ CURRENT_YEAR = datetime.now().year
 LAST_YEAR = CURRENT_YEAR - 1
 
 # Revenue configuration
-NET_REVENUE_PERCENTAGE = 1  # 80% of royalties go to net revenue (after platform/fees)
+NET_REVENUE_PERCENTAGE = .8  # 80% of royalties go to net revenue (after platform/fees)
 
 # Project paths
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -113,7 +113,9 @@ BOOK_NICKNAME_MAPPING = {
     "Syllabaire et dictionnaire visuel en langue nufi (fe'efe'e): Nkǔnjâ'wū pí mbíághəə": "nufi_syllabaire",
     "Yoruba - French - English Phrasebook: Guide de conversation Yoruba – Français - Anglais": "yoruba_phrasebook",
     "Contes africains, contes bamilekés racontés en nufi et traduits en francais: African's fairy tales, bamileke tales": "nufi_contes_bamilekes",
-    "La fourmi affamée : Ŋgə̂mbà – Français: Tə́ttá pfʉ́ njjikhwu'ú": "ngemba_fourmi_affamee"
+    "La fourmi affamée : Ŋgə̂mbà – Français: Tə́ttá pfʉ́ njjikhwu'ú": "ngemba_fourmi_affamee",
+    "NO MORE WESTERN NAMES! For African Kids": "no_more_western_names",
+    "Twi- French - English Phrasebook: Kasa Mmiɛnsa Nkɔmmɔbɔ Akwankyerɛ": "twi_phrasebook",
 }
 
 # Exchange rates (to USD) - HARDCODED FALLBACK

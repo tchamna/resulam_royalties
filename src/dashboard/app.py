@@ -11,7 +11,7 @@ import math
 
 from ..config import DASHBOARD_CONFIG, CURRENT_YEAR, LAST_YEAR, AUTHOR_NORMALIZATION, NET_REVENUE_PERCENTAGE
 from ..visualization import SalesCharts, AuthorCharts, GeographicCharts, SummaryMetrics
-from ..visualization.author_trends import AuthorTrendCharts
+from ..visualization.earning_history import EarningHistoryCharts
 
 
 def normalize_author_name(name: str) -> str:
@@ -62,14 +62,122 @@ class ResulamDashboard:
         if 'Year Sold' not in self.royalties_exploded.columns:
             self.royalties_exploded['Year Sold'] = pd.to_datetime(self.royalties_exploded['Royalty Date']).dt.year
         
-        # Initialize Dash app with Bootstrap theme
+        # Initialize Dash app with Bootstrap theme (DARKLY for dark mode by default)
         assets_path = Path(__file__).parent.parent.parent / 'assets'
         self.app = dash.Dash(
             __name__,
-            external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.FONT_AWESOME],
+            external_stylesheets=[dbc.themes.DARKLY, dbc.icons.FONT_AWESOME],
             suppress_callback_exceptions=True,
             assets_folder=str(assets_path)
         )
+        
+        # Add custom CSS for theme switching
+        self.app.index_string = '''
+        <!DOCTYPE html>
+        <html>
+            <head>
+                {%metas%}
+                <title>{%title%}</title>
+                {%favicon%}
+                {%css%}
+                <style>
+                    body.light-mode {
+                        background-color: #f8f9fa !important;
+                        color: #212529 !important;
+                    }
+                    body.light-mode .card {
+                        background-color: #ffffff !important;
+                        color: #212529 !important;
+                    }
+                    body.light-mode h1, body.light-mode h2, body.light-mode h3, 
+                    body.light-mode h4, body.light-mode h5 {
+                        color: #212529 !important;
+                    }
+                    body.light-mode .text-white {
+                        color: #212529 !important;
+                    }
+                    body.light-mode .text-light {
+                        color: #212529 !important;
+                    }
+                    body.light-mode .text-muted {
+                        color: #6c757d !important;
+                    }
+                    body.light-mode .bg-dark {
+                        background-color: #f8f9fa !important;
+                    }
+                    body.light-mode .card-header,
+                    body.light-mode .card-body {
+                        background-color: #ffffff !important;
+                        color: #212529 !important;
+                    }
+                    body.light-mode .card {
+                        border-color: #dee2e6 !important;
+                    }
+                    body.light-mode .card h4,
+                    body.light-mode .card h5 {
+                        color: #212529 !important;
+                    }
+                    
+                    /* Dropdown styling - target Dash Dropdown component */
+                    div.dash-dropdown {
+                        width: 100%;
+                    }
+                    
+                    div.dash-dropdown .Select-control {
+                        background-color: white !important;
+                        border-color: #ddd !important;
+                        color: #212529 !important;
+                    }
+                    
+                    div.dash-dropdown .Select-value {
+                        color: #212529 !important;
+                    }
+                    
+                    div.dash-dropdown .Select-placeholder {
+                        color: #999 !important;
+                    }
+                    
+                    div.dash-dropdown .Select-input input {
+                        color: #212529 !important;
+                    }
+                    
+                    div.dash-dropdown .Select-menu-outer {
+                        background-color: white !important;
+                        color: #212529 !important;
+                        border-color: #ddd !important;
+                    }
+                    
+                    div.dash-dropdown .Select-option {
+                        color: #212529 !important;
+                        background-color: white !important;
+                    }
+                    
+                    div.dash-dropdown .Select-option:hover {
+                        background-color: #f0f0f0 !important;
+                        color: #212529 !important;
+                    }
+                    
+                    div.dash-dropdown .Select-option.is-selected {
+                        background-color: #0066cc !important;
+                        color: white !important;
+                    }
+                    
+                    div.dash-dropdown .Select-option.is-focused {
+                        background-color: #f0f0f0 !important;
+                        color: #212529 !important;
+                    }
+                </style>
+            </head>
+            <body>
+                {%app_entry%}
+                <footer>
+                    {%config%}
+                    {%scripts%}
+                    {%renderer%}
+                </footer>
+            </body>
+        </html>
+        '''
         
         self.app.title = DASHBOARD_CONFIG['title']
         
@@ -102,15 +210,26 @@ class ResulamDashboard:
                 dbc.Col([
                     html.H1(
                         "Resulam Royalties Dashboard",
-                        className="text-center text-primary mb-4"
+                        className="text-center text-light mb-4"
                     ),
                     html.P(
                         f"Book Sales Analysis: 2015 - {CURRENT_YEAR}",
                         className="text-center text-muted mb-4"
                     )
-                ])
-            ])
-        ], fluid=True, className="bg-light py-4 mb-4")
+                ], width=10),
+                dbc.Col([
+                    dbc.Button(
+                        html.I(className="fas fa-sun", id="theme-icon"),
+                        id="theme-toggle-btn",
+                        color="light",
+                        outline=True,
+                        size="lg",
+                        className="mt-2"
+                    )
+                ], width=2, className="text-end")
+            ]),
+            dcc.Store(id="theme-store", data="dark")
+        ], fluid=True, className="bg-dark py-4 mb-4", id="header-container")
         
         # Year filter section with dropdown multi-select
         years_reversed = sorted(self.available_years, reverse=True)
@@ -157,46 +276,123 @@ class ResulamDashboard:
                 dbc.Card([
                     dbc.CardBody([
                         html.H4("📖", className="text-center"),
-                        html.H5("Total Books Sold", className="text-center text-muted"),
-                        html.H2(id="metric-books-sold", className="text-center text-primary")
+                        html.H5("Total Books Sold", className="text-center", style={"color": "#ffffff", "fontWeight": "600"}),
+                        html.H2(id="metric-books-sold", className="text-center", style={"color": "#00DDFF", "fontWeight": "700", "fontSize": "2.5rem"})
                     ])
                 ], className="shadow-sm")
-            ], lg=3, md=6, xs=12, className="mb-3"),
+            ], style={"flex": "1 1 20%"}, className="mb-3 ps-1 pe-1"),
+            dbc.Col([
+                dbc.Card([
+                    dbc.CardBody([
+                        html.H4("🔄", className="text-center"),
+                        html.H5("Return Books", className="text-center", style={"color": "#ffffff", "fontWeight": "600"}),
+                        html.H2(id="metric-returns", className="text-center", style={"color": "#FF3333", "fontWeight": "700", "fontSize": "2.5rem"})
+                    ])
+                ], className="shadow-sm")
+            ], style={"flex": "1 1 20%"}, className="mb-3 ps-1 pe-1"),
             dbc.Col([
                 dbc.Card([
                     dbc.CardBody([
                         html.H4("💵", className="text-center"),
-                        html.H5("Net Revenue", className="text-center text-muted"),
-                        html.H2(id="metric-net-revenue", className="text-center text-info")
+                        html.H5("Net Revenue", className="text-center", style={"color": "#ffffff", "fontWeight": "600"}),
+                        html.H2(id="metric-net-revenue", className="text-center", style={"color": "#00DDFF", "fontWeight": "700", "fontSize": "2.5rem"})
                     ])
                 ], className="shadow-sm")
-            ], lg=3, md=6, xs=12, className="mb-3"),
+            ], style={"flex": "1 1 20%"}, className="mb-3 ps-1 pe-1"),
             dbc.Col([
                 dbc.Card([
                     dbc.CardBody([
                         html.H4("📚", className="text-center"),
-                        html.H5("Unique Titles", className="text-center text-muted"),
-                        html.H2(id="metric-titles", className="text-center text-secondary")
+                        html.H5("Unique Titles", className="text-center", style={"color": "#ffffff", "fontWeight": "600"}),
+                        html.H2(id="metric-titles", className="text-center", style={"color": "#888888", "fontWeight": "700", "fontSize": "2.5rem"})
                     ])
                 ], className="shadow-sm")
-            ], lg=3, md=6, xs=12, className="mb-3"),
+            ], style={"flex": "1 1 20%"}, className="mb-3 ps-1 pe-1"),
             dbc.Col([
                 dbc.Card([
                     dbc.CardBody([
                         html.H4("✍️", className="text-center"),
-                        html.H5("Contributing Authors", className="text-center text-muted"),
-                        html.H2(id="metric-authors", className="text-center text-warning")
+                        html.H5("Contributing Authors", className="text-center", style={"color": "#ffffff", "fontWeight": "600"}),
+                        html.H2(id="metric-authors", className="text-center", style={"color": "#FFDD00", "fontWeight": "700", "fontSize": "2.5rem"})
                     ])
                 ], className="shadow-sm")
-            ], lg=3, md=6, xs=12, className="mb-3")
-        ], className="mb-4")
+            ], style={"flex": "1 1 20%"}, className="mb-3 ps-1 pe-1")
+        ], className="mb-4 g-0", style={"display": "flex", "flexWrap": "nowrap"})
+        
+        # Sales Trend Chart (2015-2025)
+        sales_trend_section = dbc.Card([
+            dbc.CardHeader(html.H5(id="sales-trend-title", className="mb-0")),
+            dbc.CardBody([
+                dcc.Loading(
+                    id="loading-trend-chart",
+                    type="default",
+                    children=dcc.Graph(id="sales-trend-chart")
+                )
+            ])
+        ], className="shadow-sm mb-4")
+        
+        # Sales by Language Chart
+        language_display_options = (
+            [{"label": "All (Stacked)", "value": "all_stacked"},
+             {"label": "All (Grouped)", "value": "all_grouped"}] +
+            [{"label": lang, "value": f"language::{lang}"} for lang in all_languages]
+        )
+
+        sales_by_language_section = dbc.Card([
+            dbc.CardHeader(
+                dbc.Row([
+                    dbc.Col(html.H5("🌐 Sales by Language", className="mb-0"), md=8, xs=12),
+                    dbc.Col(
+                        dcc.Dropdown(
+                            id="sales-language-display-mode",
+                            options=language_display_options,
+                            value="all_stacked",
+                            searchable=True,
+                            clearable=False,
+                            style={"minWidth": "220px", "width": "100%"}
+                        ),
+                        md=4,
+                        xs=12,
+                        className="text-md-end"
+                    )
+                ], align="center", className="g-2"),
+                className="py-2"
+            ),
+            dbc.CardBody([
+                dcc.Loading(
+                    id="loading-sales-chart",
+                    type="default",
+                    children=dcc.Graph(id="sales-by-language-chart")
+                )
+            ])
+        ], className="shadow-sm mb-4")
+        
+        # Returns by Language Chart
+        returns_by_language_section = dbc.Card([
+            dbc.CardHeader(html.H5(id="returns-title", children="🌐 Returned Books", className="mb-0")),
+            dbc.CardBody([
+                dcc.Loading(
+                    id="loading-returns-chart",
+                    type="default",
+                    children=dcc.Graph(id="returns-by-language-chart")
+                )
+            ])
+        ], className="shadow-sm mb-4")
+
+        # Group sales overview elements so they can be toggled per tab
+        sales_overview_section = html.Div([
+            metrics_row,
+            sales_trend_section,
+            sales_by_language_section,
+            returns_by_language_section
+        ], id="sales-overview-section")
         
         # Tabs for different views
         tabs = dbc.Tabs([
             dbc.Tab(label="📊 Sales Overview", tab_id="sales"),
             dbc.Tab(label="📖 Books Analysis", tab_id="books"),
             dbc.Tab(label="✍️ Authors Analysis", tab_id="authors"),
-            dbc.Tab(label="📈 Author Trends", tab_id="trends"),
+            dbc.Tab(label="📈 Earning History", tab_id="trends"),
             dbc.Tab(label="🌍 Geographic Distribution", tab_id="geography"),
         ], id="dashboard-tabs", active_tab="sales", className="mb-4")
         
@@ -207,8 +403,8 @@ class ResulamDashboard:
         self.app.layout = dbc.Container([
             header,
             filter_section,
-            metrics_row,
             tabs,
+            sales_overview_section,
             content,
             
             # Footer
@@ -225,6 +421,17 @@ class ResulamDashboard:
         """Register all dashboard callbacks"""
         
         # Callback to update the year-filter-store when a year is selected
+        @self.app.callback(
+            Output("sales-overview-section", "style"),
+            Input("dashboard-tabs", "active_tab"),
+            prevent_initial_call=False
+        )
+        def toggle_sales_overview(active_tab):
+            """Show sales overview cards/charts only on the Sales tab."""
+            if active_tab == "sales":
+                return {}
+            return {"display": "none"}
+
         @self.app.callback(
             Output("year-filter-store", "data"),
             Input("year-filter", "value")
@@ -246,6 +453,7 @@ class ResulamDashboard:
             Output("metric-net-revenue", "children"),
             Output("metric-titles", "children"),
             Output("metric-authors", "children"),
+            Output("metric-returns", "children"),
             Input("year-filter-store", "data"),
             Input("language-filter", "value"),
             prevent_initial_call=False
@@ -266,12 +474,164 @@ class ResulamDashboard:
             
             metrics = SummaryMetrics.calculate_metrics(filtered_df, filtered_exploded)
             
+            # Calculate return books (based on Units Refunded column)
+            if 'Units Refunded' in filtered_df.columns:
+                total_refunded = filtered_df['Units Refunded'].sum()
+            else:
+                total_refunded = 0
+            
             return (
                 f"{metrics['total_books_sold']:,}",
                 f"${metrics['net_revenue_usd']:,.2f}",
                 str(metrics['unique_titles']),
-                str(metrics['unique_authors'])
+                str(metrics['unique_authors']),
+                f"{int(total_refunded):,}"
             )
+        
+        @self.app.callback(
+            Output("sales-trend-title", "children"),
+            Output("sales-trend-chart", "figure"),
+            Input("year-filter-store", "data"),
+            Input("language-filter", "value"),
+            prevent_initial_call=False
+        )
+        def update_sales_trend(selected_years, selected_language):
+            """Update sales trend chart with dynamic title"""
+            trend_data = self.royalties
+            if selected_language and selected_language != "all":
+                trend_data = self.royalties[self.royalties['Language'] == selected_language]
+                total_books = trend_data['Net Units Sold'].sum()
+                trend_title = f"📈 Sales Trend: {selected_language} ({min(self.available_years)} - {max(self.available_years)}): {int(total_books):,} books sold"
+            else:
+                total_books = self.royalties['Net Units Sold'].sum()
+                trend_title = f"📈 Sales Trend: {min(self.available_years)} - {max(self.available_years)}: {int(total_books):,} books sold"
+            
+            from src.visualization.charts import SalesCharts
+            fig = SalesCharts.books_sold_per_year(trend_data, title=trend_title)
+            return trend_title, fig
+        
+        @self.app.callback(
+            Output("sales-by-language-chart", "figure"),
+            Input("year-filter-store", "data"),
+            Input("language-filter", "value"),
+            Input("sales-language-display-mode", "value"),
+            prevent_initial_call=False
+        )
+        def update_sales_by_language(selected_years, selected_language, display_mode):
+            """Update sales by language stacked chart by year"""
+            if not selected_years:
+                filtered_df = self.royalties
+            else:
+                filtered_df = self.royalties[self.royalties['Year Sold'].isin(selected_years)]
+            
+            if len(filtered_df) == 0:
+                import plotly.graph_objects as go
+                fig = go.Figure()
+                fig.add_annotation(text="No sales data available", xref="paper", yref="paper",
+                                   x=0.5, y=0.5, showarrow=False)
+                fig.update_layout(template="plotly_dark", height=400, title="Sales by Language (All - Grouped)")
+                return fig
+            
+            # Sort by year to ensure proper ordering
+            filtered_df = filtered_df.sort_values('Year Sold')
+            
+            display_mode = display_mode or "all_stacked"
+            focus_language = None
+            barmode = 'group'
+            title_suffix = "All - Grouped"
+
+            if display_mode == "all_stacked":
+                barmode = 'stack'
+                title_suffix = "All - Stacked"
+            elif display_mode == "all_grouped":
+                barmode = 'group'
+                title_suffix = "All - Grouped"
+            elif isinstance(display_mode, str) and display_mode.startswith("language::"):
+                focus_language = display_mode.split("::", 1)[1]
+                barmode = 'group'
+                title_suffix = focus_language
+
+            if focus_language and focus_language not in filtered_df['Language'].unique():
+                focus_language = None
+                title_suffix = "All - Grouped"
+                barmode = 'group'
+
+            chart_title = f"Sales by Language ({title_suffix})"
+
+            from src.visualization.charts import SalesCharts
+            fig = SalesCharts.sales_by_language_stacked(
+                filtered_df,
+                title=chart_title,
+                barmode=barmode,
+                focus_language=focus_language,
+                include_language_label=(focus_language is None)
+            )
+            return fig
+        
+        @self.app.callback(
+            Output("returns-title", "children"),
+            Output("returns-by-language-chart", "figure"),
+            Input("year-filter-store", "data"),
+            Input("language-filter", "value"),
+            prevent_initial_call=False
+        )
+        def update_returns_by_language(selected_years, selected_language):
+            """Update returns by book (nickname) chart - only show books with returns"""
+            if not selected_years:
+                filtered_df = self.royalties
+                period_text = "Lifetime"
+            else:
+                filtered_df = self.royalties[self.royalties['Year Sold'].isin(selected_years)]
+                if len(selected_years) == 1:
+                    period_text = f"{selected_years[0]}"
+                else:
+                    period_text = f"{min(selected_years)} - {max(selected_years)}"
+            
+            # Get returns by book nickname and filter out books with no returns
+            returns_by_book = filtered_df[filtered_df['Units Refunded'] > 0].groupby('book_nick_name')['Units Refunded'].sum().sort_values(ascending=False)
+            total_refunded = returns_by_book.sum()
+            
+            # Create dynamic title
+            returns_title = f"🌐 Returned Books ({period_text}): {int(total_refunded)} units refunded"
+            
+            if len(returns_by_book) == 0:
+                # Return empty chart
+                import plotly.graph_objects as go
+                fig = go.Figure()
+                fig.add_annotation(text="No return data available", xref="paper", yref="paper",
+                                   x=0.5, y=0.5, showarrow=False)
+                fig.update_layout(template="plotly_dark", height=400, title="Returned Books")
+                return returns_title, fig
+            
+            import plotly.express as px
+            import plotly.graph_objects as go
+            
+            fig = px.bar(
+                x=returns_by_book.values,
+                y=returns_by_book.index,
+                orientation="h",
+                labels={"x": "Units Refunded", "y": "Book Name"},
+                title="Returned Books by Title",
+                color=returns_by_book.values,
+                color_continuous_scale="Reds"
+            )
+            
+            # Add book names as labels on top of bars
+            fig.update_traces(
+                textposition="outside",
+                text=[f"{val}" for val in returns_by_book.values],
+                textangle=0
+            )
+            
+            fig.update_layout(
+                template="plotly_dark",
+                height=max(400, len(returns_by_book) * 25),
+                showlegend=False,
+                hovermode="closest",
+                yaxis_autorange="reversed",
+                margin=dict(l=150, r=100, t=80, b=60)
+            )
+            return returns_title, fig
         
         @self.app.callback(
             Output("tab-content", "children"),
@@ -303,7 +663,7 @@ class ResulamDashboard:
             elif active_tab == "authors":
                 return self._create_authors_tab(filtered_exploded)
             elif active_tab == "trends":
-                return self._create_trends_tab(filtered_exploded)
+                return self._create_earning_history_tab(filtered_exploded)
             elif active_tab == "geography":
                 return self._create_geography_tab(filtered_royalties)
             
@@ -340,17 +700,17 @@ class ResulamDashboard:
             State('dashboard-tabs', 'active_tab'),
             prevent_initial_call=False
         )
-        def update_author_trends(selected_authors, active_tab):
-            """Update author trends chart based on selected authors"""
+        def update_author_earnings_history(selected_authors, active_tab):
+            """Update author earnings history chart based on selected authors"""
             if active_tab != 'trends':
-                return AuthorTrendCharts.earnings_trend_all_authors(self.royalties_exploded)
+                return EarningHistoryCharts.earnings_trend_all_authors(self.royalties_exploded)
             
             if selected_authors and len(selected_authors) > 0:
                 # If specific authors are selected, show only those
-                return AuthorTrendCharts.earnings_trend_selected_authors(self.royalties_exploded, selected_authors)
+                return EarningHistoryCharts.earnings_trend_selected_authors(self.royalties_exploded, selected_authors)
             else:
                 # If no authors selected, show all
-                return AuthorTrendCharts.earnings_trend_all_authors(self.royalties_exploded)
+                return EarningHistoryCharts.earnings_trend_all_authors(self.royalties_exploded)
         
         @self.app.callback(
             Output("download-csv", "data"),
@@ -734,48 +1094,11 @@ class ResulamDashboard:
         """Create sales overview tab content"""
         if data is None:
             data = self.royalties
-        
-        # Trend chart shows historical data (2015-2025) but respects language filter
-        trend_data = self.royalties
-        if selected_language and selected_language != "all":
-            trend_data = self.royalties[self.royalties['Language'] == selected_language]
-            total_books = trend_data['Net Units Sold'].sum()
-            trend_title = f"📈 Sales Trend: {selected_language} ({min(self.available_years)} - {max(self.available_years)}): {int(total_books):,} books sold"
-        else:
-            total_books = self.royalties['Net Units Sold'].sum()
-            trend_title = f"📈 Sales Trend: {min(self.available_years)} - {max(self.available_years)}: {int(total_books):,} books sold"
-        
-        # Create title for language chart (respects language filter)
-        if selected_language and selected_language != "all":
-            language_title = f"🌐 Sales by Language: {selected_language}"
-        else:
-            language_title = "🌐 Sales by Language (All - Grouped)"
             
         return dbc.Container([
             dbc.Row([
                 dbc.Col([
-                    dbc.Card([
-                        dbc.CardHeader(html.H4(trend_title)),
-                        dbc.CardBody([
-                            dcc.Graph(
-                                figure=SalesCharts.books_sold_per_year(trend_data, title=trend_title),
-                                config={'displayModeBar': False}
-                            )
-                        ])
-                    ], className="shadow-sm mb-4")
-                ])
-            ]),
-            dbc.Row([
-                dbc.Col([
-                    dbc.Card([
-                        dbc.CardHeader(html.H4(language_title)),
-                        dbc.CardBody([
-                            dcc.Graph(
-                                figure=SalesCharts.sales_by_language_stacked(data, title=language_title),
-                                config={'displayModeBar': False}
-                            )
-                        ])
-                    ], className="shadow-sm mb-4")
+                    html.P("Summary cards and sales charts are available when the Sales Overview tab is selected.", className="text-muted")
                 ])
             ])
         ], fluid=True)
@@ -916,11 +1239,11 @@ class ResulamDashboard:
                                 ),
                                 dbc.CardBody([
                                     html.Ol([
-                                        html.Li(f"{author}: ${share:,.2f}", className="text-muted mb-2")
+                                        html.Li(f"{author}: ${share:,.2f}", className="mb-2 author-list-item")
                                         for author, share in sorted(author_data.items(), key=lambda x: x[1], reverse=False)
                                     ]),
                                     html.Hr(),
-                                    html.H5(f"Total: ${sum(author_data.values()):,.2f}", className="text-primary font-weight-bold")
+                                    html.H5(f"Total: ${sum(author_data.values()):,.2f}", className="author-list-total font-weight-bold")
                                 ])
                             ], className="shadow-sm mb-4")
                         ], md=6),
@@ -939,14 +1262,14 @@ class ResulamDashboard:
                                     html.Ol([
                                         html.Li(
                                             f"{author}: ${share:,.2f} → ${max(5, share):,.2f} / {int((max(5, share) * 655 + 2) // 5 * 5):,} FCFA",
-                                            className="text-muted mb-2"
+                                            className="mb-2 author-list-item"
                                         )
                                         for author, share in sorted(author_data.items(), key=lambda x: x[1], reverse=False)
                                     ]),
                                     html.Hr(),
                                     html.H5(
                                         f"Total: ${sum(max(5, share) for share in author_data.values()):,.2f} / {int(sum((max(5, share) * 655 + 2) // 5 * 5 for share in author_data.values())):,} FCFA",
-                                        className="text-primary font-weight-bold"
+                                        className="author-list-total font-weight-bold"
                                     )
                                 ])
                             ], className="shadow-sm mb-4")
@@ -962,13 +1285,13 @@ class ResulamDashboard:
             ])
         ], fluid=True)
     
-    def _create_trends_tab(self, data=None):
-        """Create author trends tab with bar chart and vertical checkbox dropdown"""
+    def _create_earning_history_tab(self, data=None):
+        """Create earning history tab with bar chart and vertical checkbox dropdown"""
         if data is None:
             data = self.royalties_exploded
         
         # Get list of all authors
-        all_authors = sorted(AuthorTrendCharts.get_all_authors(data))
+        all_authors = sorted(EarningHistoryCharts.get_all_authors(data))
         
         return dbc.Container([
             dbc.Row([
@@ -1050,6 +1373,89 @@ class ResulamDashboard:
                 ], md=6)
             ])
         ], fluid=True)
+        
+        # Theme toggle with proper theme switching
+        @self.app.callback(
+            Output("theme-store", "data"),
+            Output("theme-icon", "className"),
+            Output("header-container", "className"),
+            Input("theme-toggle-btn", "n_clicks"),
+            State("theme-store", "data"),
+            prevent_initial_call=True
+        )
+        def toggle_theme(n_clicks, current_theme):
+            """Toggle between light and dark mode"""
+            new_theme = "light" if current_theme == "dark" else "dark"
+            icon_class = "fas fa-moon" if new_theme == "dark" else "fas fa-sun"
+            header_class = "bg-light py-4 mb-4" if new_theme == "light" else "bg-dark py-4 mb-4"
+            return new_theme, icon_class, header_class
+        
+        # Apply theme to body element using clientside callback
+        self.app.clientside_callback(
+            """
+            function(theme) {
+                if (theme === 'light') {
+                    document.body.classList.add('light-mode');
+                } else {
+                    document.body.classList.remove('light-mode');
+                }
+                return theme;
+            }
+            """,
+            Output("theme-store", "data", allow_duplicate=True),
+            Input("theme-store", "data"),
+            prevent_initial_call=True
+        )
+        
+        # Returns modal toggle
+        @self.app.callback(
+            Output("returns-modal", "is_open"),
+            Input("returns-details-btn", "n_clicks"),
+            Input("returns-close-btn", "n_clicks"),
+            State("returns-modal", "is_open"),
+            prevent_initial_call=True
+        )
+        def toggle_returns_modal(open_clicks, close_clicks, is_open):
+            """Toggle returns details modal"""
+            return not is_open
+        
+        # Populate returns table
+        @self.app.callback(
+            Output("returns-table-content", "children"),
+            Input("year-filter-store", "data"),
+            Input("language-filter", "value"),
+            prevent_initial_call=False
+        )
+        def update_returns_table(selected_years, selected_language):
+            """Show books with refunds"""
+            if not selected_years:
+                filtered_df = self.royalties
+            else:
+                filtered_df = self.royalties[self.royalties['Year Sold'].isin(selected_years)]
+            
+            if selected_language and selected_language != "all":
+                filtered_df = filtered_df[filtered_df['Language'] == selected_language]
+            
+            # Get books with refunds
+            returns_df = filtered_df[filtered_df['Units Refunded'] > 0][['Title', 'Units Sold', 'Units Refunded', 'Marketplace', 'Royalty Date']].copy()
+            returns_df = returns_df.sort_values('Units Refunded', ascending=False)
+            
+            if len(returns_df) == 0:
+                return html.Div([
+                    html.P("No returned books in the selected period.", className="text-muted")
+                ])
+            
+            return html.Div([
+                html.P(f"Total returned books: {int(returns_df['Units Refunded'].sum())}", className="fw-bold mb-3"),
+                dbc.Table.from_dataframe(
+                    returns_df.head(50),
+                    striped=True,
+                    bordered=True,
+                    hover=True,
+                    responsive=True,
+                    size="sm"
+                )
+            ])
     
     def run(self, debug: bool = None, host: str = None, port: int = None):
         """Run the dashboard server"""

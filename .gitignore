@@ -149,6 +149,14 @@ Thumbs.db
 .DS_Store
 *.lnk
 
+# Environment variables (NEVER commit these - they contain secrets!)
+.env
+.env.local
+.env.*.local
+*.pem
+test-rag.pem
+ec2-key.pem
+
 # Dash
 .plotly/
 

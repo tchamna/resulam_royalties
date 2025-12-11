@@ -138,13 +138,27 @@ class BookMetadataMapper:
             self.books_df['Title'].tolist(),
             self.books_df['language_name'].tolist()
         ))
+
+        # Precompute normalized lookups for resilient matching
+        self._language_lookup = {
+            str(title).strip().lower(): language
+            for title, language in self.language_mapping.items()
+            if isinstance(title, str)
+        }
     
     def get_book_nickname(self, title: str) -> str:
         """Get book nickname from title"""
+        if not isinstance(title, str):
+            return title
+
+        title_normalized = title.strip()
+        title_lower = title_normalized.lower()
+
         for key, value in BOOK_NICKNAME_MAPPING.items():
-            if key in title:
+            if isinstance(key, str) and key.lower() in title_lower:
                 return value
-        return self.nickname_mapping.get(title, title)
+
+        return self.nickname_mapping.get(title_normalized, title_normalized)
     
     def get_authors(self, title: str) -> str:
         """Get authors from title with special rules"""
@@ -162,6 +176,23 @@ class BookMetadataMapper:
             return "Resulam, Shck Tchamna"
         else:
             return self.author_mapping.get(title, "Resulam, Shck Tchamna")
+
+    def get_language(self, title: str) -> str:
+        """Resolve language for a given title with graceful fallbacks"""
+        if not isinstance(title, str):
+            return title
+
+        title_normalized = title.strip()
+        title_lower = title_normalized.lower()
+
+        if title_lower in self._language_lookup:
+            return self._language_lookup[title_lower]
+
+        for key_lower, value in self._language_lookup.items():
+            if key_lower and key_lower in title_lower:
+                return value
+
+        return LanguageClassifier.classify_language(title_normalized)
 
 
 class RoyaltiesProcessor:
@@ -274,7 +305,7 @@ def load_and_process_all_data() -> Dict[str, pd.DataFrame]:
     # First, add the new columns to sell_history
     sell_history['book_nick_name'] = sell_history['Title'].apply(mapper.get_book_nickname)
     sell_history['Authors'] = sell_history['Title'].apply(mapper.get_authors)
-    sell_history['Language'] = sell_history['Title'].replace(mapper.language_mapping)
+    sell_history['Language'] = sell_history['Title'].apply(mapper.get_language)
     
     # Select columns of interest
     columns_of_interest = [

@@ -43,7 +43,14 @@ class SalesCharts:
         return fig
     
     @staticmethod
-    def sales_by_language_stacked(df: pd.DataFrame, title: str = None) -> go.Figure:
+    def sales_by_language_stacked(
+        df: pd.DataFrame,
+        title: str = None,
+        *,
+        barmode: str = 'group',
+        focus_language: Optional[str] = None,
+        include_language_label: bool = True
+    ) -> go.Figure:
         """Create interactive stacked/grouped bar chart by language"""
         # Filter out excluded languages
         df_filtered = df[~df['Language'].isin(VIZ_CONFIG['excluded_languages'])]
@@ -51,80 +58,148 @@ class SalesCharts:
         if title is None:
             title = 'Books Sold by Language per Year (Grouped)'
         
-        # Group by year and language
+        # Group by year and language, sorted by year
         units_by_year_lang = df_filtered.groupby(
             ['Year Sold', 'Language']
         )['Net Units Sold'].sum().reset_index()
         
-        # Get sorted languages
-        sorted_languages = sorted(units_by_year_lang['Language'].unique())
+        # Optionally focus on a single language if requested and data exists
+        if focus_language:
+            language_mask = units_by_year_lang['Language'] == focus_language
+            if language_mask.any():
+                units_by_year_lang = units_by_year_lang[language_mask]
+            else:
+                focus_language = None  # fallback to all languages if not present
+
+        # Sort by year to ensure proper x-axis ordering
+        units_by_year_lang = units_by_year_lang.sort_values('Year Sold')
+
+        if units_by_year_lang.empty:
+            fig = go.Figure()
+            fig.add_annotation(text='No sales data available', xref='paper', yref='paper',
+                               x=0.5, y=0.5, showarrow=False)
+            fig.update_layout(
+                plot_bgcolor='rgba(255,255,255,1)',
+                paper_bgcolor='rgba(255,255,255,1)',
+                title=title,
+                template=VIZ_CONFIG['template'],
+                height=420
+            )
+            return fig
+
+        # Identify the tallest bar to control its label separately
+        tallest_idx = units_by_year_lang['Net Units Sold'].idxmax()
+        tallest_point = units_by_year_lang.loc[tallest_idx]
+        tallest_language = tallest_point['Language']
+        tallest_year = str(tallest_point['Year Sold'])
+
+        def _format_value(val):
+            if pd.isna(val):
+                return ""
+            if isinstance(val, (int, float)):
+                if float(val).is_integer():
+                    return str(int(val))
+                return f"{val:.2f}"
+            return str(val)
+
+        def _format_labels(values, language_name):
+            formatted_values = [_format_value(val) for val in values]
+            if include_language_label:
+                return [f"{value}<br>{language_name}" if value else language_name for value in formatted_values]
+            return formatted_values
+
+        # Get sorted years
+        sorted_years = sorted(units_by_year_lang['Year Sold'].unique())
+        # Convert years to strings for proper axis ordering
+        sorted_years_str = [str(year) for year in sorted_years]
+        
+        # Sort languages by total sales (descending) for better visualization
+        language_totals = units_by_year_lang.groupby('Language')['Net Units Sold'].sum().sort_values(ascending=False)
+        sorted_languages = language_totals.index.tolist()
+
+        if focus_language:
+            sorted_languages = [lang for lang in sorted_languages if lang == focus_language]
         
         # Create figure
         fig = go.Figure()
+        color_sequence = list(getattr(getattr(fig.layout.template, 'layout', None), 'colorway', []) or px.colors.qualitative.Plotly)
         
-        # Add trace for each language
-        for language in sorted_languages:
-            filtered_data = units_by_year_lang[units_by_year_lang['Language'] == language]
-            fig.add_trace(go.Bar(
-                x=filtered_data['Year Sold'],
-                y=filtered_data['Net Units Sold'],
-                name=language,
-                text=filtered_data['Net Units Sold'],
-                textposition='inside'
-            ))
+        # Add trace for each language (in descending order by total sales)
+        for idx, language in enumerate(sorted_languages):
+            filtered_data = units_by_year_lang[units_by_year_lang['Language'] == language].sort_values('Year Sold')
+            # Convert years to strings for consistency
+            filtered_data = filtered_data.copy()
+            filtered_data['Year Sold'] = filtered_data['Year Sold'].astype(str)
+            bar_color = color_sequence[idx % len(color_sequence)]
+            hovertemplate = '<b>%{fullData.name}</b><br>Year: %{x}<br>Units: %{y}<extra></extra>'
+
+            if language == tallest_language:
+                tallest_mask = filtered_data['Year Sold'] == tallest_year
+                regular_data = filtered_data[~tallest_mask]
+                tallest_data = filtered_data[tallest_mask]
+
+                if not regular_data.empty:
+                    regular_values = regular_data['Net Units Sold'].tolist()
+                    fig.add_trace(go.Bar(
+                        x=regular_data['Year Sold'],
+                        y=regular_data['Net Units Sold'],
+                        name=language,
+                        text=_format_labels(regular_values, language),
+                        textposition='outside',
+                        textangle=-35,
+                        cliponaxis=False,
+                        hovertemplate=hovertemplate,
+                        marker=dict(color=bar_color),
+                        legendgroup=language,
+                        offsetgroup=language
+                    ))
+
+                if not tallest_data.empty:
+                    tallest_values = tallest_data['Net Units Sold'].tolist()
+                    fig.add_trace(go.Bar(
+                        x=tallest_data['Year Sold'],
+                        y=tallest_data['Net Units Sold'],
+                        name=language,
+                        text=_format_labels(tallest_values, language),
+                        textposition='outside',
+                        textangle=0,
+                        cliponaxis=False,
+                        hovertemplate=hovertemplate,
+                        marker=dict(color=bar_color),
+                        legendgroup=language,
+                        offsetgroup=language,
+                        showlegend=regular_data.empty
+                    ))
+            else:
+                filtered_values = filtered_data['Net Units Sold'].tolist()
+                fig.add_trace(go.Bar(
+                    x=filtered_data['Year Sold'],
+                    y=filtered_data['Net Units Sold'],
+                    name=language,
+                    text=_format_labels(filtered_values, language),
+                    textposition='outside',
+                    textangle=-35,
+                    cliponaxis=False,
+                    hovertemplate=hovertemplate,
+                    marker=dict(color=bar_color),
+                    legendgroup=language,
+                    offsetgroup=language
+                ))
         
-        # Create dropdown buttons
-        base_title = title if title else 'Books Sold by Language per Year'
-        dropdown_buttons = [
-            {
-                'label': 'All (Stacked)',
-                'method': 'update',
-                'args': [
-                    {'visible': [True] * len(sorted_languages)},
-                    {'barmode': 'stack', 'title': f'{base_title} (Stacked)'}
-                ]
-            },
-            {
-                'label': 'All (Grouped)',
-                'method': 'update',
-                'args': [
-                    {'visible': [True] * len(sorted_languages)},
-                    {'barmode': 'group', 'title': f'{base_title} (Grouped)'}
-                ]
-            }
-        ]
-        
-        # Add individual language buttons
-        for i, language in enumerate(sorted_languages):
-            visibility = [False] * len(sorted_languages)
-            visibility[i] = True
-            dropdown_buttons.append({
-                'label': language,
-                'method': 'update',
-                'args': [
-                    {'visible': visibility},
-                    {'barmode': 'group', 'title': f'Books Sold in {language}'}
-                ]
-            })
-        
-        # Update layout
+        # Update layout with proper x-axis ordering
         fig.update_layout(
             plot_bgcolor='rgba(255,255,255,1)',
             paper_bgcolor='rgba(255,255,255,1)',
-            updatemenus=[{
-                'buttons': dropdown_buttons,
-                'direction': 'down',
-                'showactive': True,
-                'x': 0.9,
-                'xanchor': 'right',
-                'y': 1.15,
-                'yanchor': 'top'
-            }],
             title=title if title else 'Books Sold by Language per Year (Grouped)',
             xaxis_title='Year',
             yaxis_title='Net Units Sold',
-            barmode='group',
-            template=VIZ_CONFIG['template']
+            barmode='stack' if barmode == 'stack' else 'group',
+            template=VIZ_CONFIG['template'],
+            xaxis=dict(
+                categoryorder='array',
+                categoryarray=sorted_years_str
+            ),
+            margin=dict(t=140, b=120, l=80, r=40)
         )
         
         return fig
