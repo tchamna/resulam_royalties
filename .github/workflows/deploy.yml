@@ -64,8 +64,14 @@ jobs:
             # Navigate to app directory
             cd ${{ env.APP_DIR }}
             
+            # Stash any local changes (like generated CSV files) before pulling
+            git stash || true
+            
             # Pull latest code
             git pull origin main
+            
+            # Restore stashed changes (data files)
+            git stash pop || true
             
             # Download data files from S3 if configured
             if [ ! -z "${{ env.S3_DATA_FILES }}" ]; then
