@@ -42,61 +42,41 @@ jobs:
           chmod 600 ~/.ssh/ec2-key.pem
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      - name: Deploy to EC2
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Deploy to EC2 using deploy.py
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ec2-user
-          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          EC2_IP: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
+          SSH_KEY_PATH: ~/.ssh/ec2-key.pem
+          GIT_REPO: ${{ github.repository }}
+          APP_PORT: ${{ secrets.DEPLOY_PORT || '8050' }}
+          APP_DIR: ${{ secrets.APP_DIR || '/home/ec2-user/apps/resulam-royalties' }}
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME || 'resulam-royalties.tchamna.com' }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET || 'resulam-royalties' }}
+          AWS_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          S3_DATA_FILES: ${{ secrets.S3_DATA_FILES }}
         run: |
-          cat > /tmp/deploy-remote.sh << 'EOF'
-          #!/bin/bash
-          set -e
-          
-          APP_DIR="/home/$EC2_USER/resulam-royalties"
-          VENV_DIR="$APP_DIR/venv"
-          
-          echo "🚀 Starting EC2 deployment..."
-          
-          # Update repository
-          echo "📥 Updating repository..."
-          cd "$APP_DIR"
-          git fetch origin
-          git reset --hard origin/main
-          
-          # Update dependencies
-          echo "📚 Updating dependencies..."
-          source "$VENV_DIR/bin/activate"
-          pip install --upgrade -r requirements.txt -q
-          
-          # Restart service
-          echo "🔄 Restarting application..."
-          sudo systemctl restart resulam-royalties
-          
-          # Verify service
-          sleep 3
-          if sudo systemctl is-active --quiet resulam-royalties; then
-              echo "✅ Deployment successful!"
-              echo "Dashboard: http://$EC2_HOST"
-          else
-              echo "❌ Deployment failed!"
-              sudo journalctl -u resulam-royalties -n 50
-              exit 1
-          fi
-          EOF
-          
-          chmod +x /tmp/deploy-remote.sh
-          ssh -i ~/.ssh/ec2-key.pem ec2-user@${{ secrets.EC2_HOST }} \
-            "bash -s < /tmp/deploy-remote.sh"
+          # Run the universal deploy script
+          python deploy.py
 
       - name: Verify deployment
         env:
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME || 'resulam-royalties.tchamna.com' }}
           EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
           echo "✅ Verifying application health..."
           max_attempts=10
           for i in $(seq 1 $max_attempts); do
-            if curl -sf http://${{ secrets.EC2_HOST }}/ > /dev/null 2>&1; then
+            # Try HTTPS first (production), then HTTP (fallback)
+            if curl -sf https://$DOMAIN_NAME/ > /dev/null 2>&1 || curl -sf http://$EC2_HOST:8050/ > /dev/null 2>&1; then
               echo "✅ Application is responding!"
+              echo "Dashboard: https://$DOMAIN_NAME"
               exit 0
             fi
             echo "Attempt $i/$max_attempts: Waiting for application to start..."
