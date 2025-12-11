@@ -32,49 +32,49 @@ def ssh(cmd):
 def configure_security_group():
     """Configure AWS security group to allow port 8050"""
     try:
-        # Get instance ID from EC2
-        cmd = 'ec2-metadata --instance-id | cut -d " " -f 2'
-        success, instance_id, err = ssh(cmd)
-        if not success or not instance_id.strip():
-            print(f"⚠ Warning: Could not get instance ID: {err}")
+        # Try to find instance and security group - use a simpler query
+        cmd = f'aws ec2 describe-instances --filters "Name=instance-state-name,Values=running" --region {AWS_REGION} --query "Reservations[0].Instances[0].[InstanceId,SecurityGroups[0].GroupId]" --output text'
+        success, result, err = ssh(cmd)
+        
+        if not success or not result.strip():
             return False
         
-        instance_id = instance_id.strip()
-        
-        # Use AWS CLI to get security group
-        cmd = f'aws ec2 describe-instances --instance-ids {instance_id} --region {AWS_REGION} --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" --output text 2>/dev/null'
-        success, sg_id, err = ssh(cmd)
-        if not success or not sg_id.strip():
-            print(f"⚠ Warning: Could not get security group ID: {err}")
+        parts = result.strip().split()
+        if len(parts) < 2:
             return False
         
-        sg_id = sg_id.strip()
+        instance_id = parts[0]
+        sg_id = parts[1]
         
-        # Check if port 8050 is already authorized
-        cmd = f'aws ec2 describe-security-groups --group-ids {sg_id} --region {AWS_REGION} --query "SecurityGroups[0].IpPermissions[?FromPort==`8050`]" --output json 2>/dev/null'
-        success, check_result, err = ssh(cmd)
+        # List all rules to check if 8050 exists
+        cmd = f'aws ec2 describe-security-groups --group-ids {sg_id} --region {AWS_REGION} --query "SecurityGroups[0].IpPermissions[*].FromPort" --output text'
+        success, ports_str, err = ssh(cmd)
         
-        # If port is not already open, add the rule
-        if success and check_result.strip() == '[]':
+        ports = ports_str.strip().split() if success and ports_str.strip() else []
+        
+        # Check if port 8050 is NOT in the list
+        if success and '8050' not in ports:
+            # Add the rule
             cmd = (f'aws ec2 authorize-security-group-ingress --group-id {sg_id} '
                    f'--protocol tcp --port {APP_PORT} --cidr 0.0.0.0/0 '
-                   f'--region {AWS_REGION} 2>/dev/null')
-            success, out, err = ssh(cmd)
-            if success:
-                print(f"✓ Security group updated - port {APP_PORT} now accessible")
+                   f'--region {AWS_REGION}')
+            auth_success, out, err = ssh(cmd)
+            if auth_success:
+                print(f"✓ Security group ({sg_id}) - port {APP_PORT} authorized")
                 return True
             else:
-                # Port might already be authorized, continue
-                print(f"✓ Port {APP_PORT} is accessible (already authorized or default rule)")
-                return True
+                if 'Duplicate' in err or 'already exists' in err.lower():
+                    print(f"✓ Port {APP_PORT} already authorized")
+                    return True
+                else:
+                    print(f"⚠ Could not authorize port {APP_PORT}: {err[:60]}")
+                    return False
         else:
-            print(f"✓ Port {APP_PORT} is already authorized in security group")
+            print(f"✓ Port {APP_PORT} already authorized")
             return True
             
     except Exception as e:
-        print(f"⚠ Warning: Security group configuration failed: {e}")
-        print("   You may need to manually add inbound rule for port {0}".format(APP_PORT))
-        return True  # Don't fail deployment, user can add manually
+        return False
 
 def deploy():
     print("\n" + "="*60)
@@ -83,9 +83,16 @@ def deploy():
     
     # Step 0: Configure AWS Security Group
     print("Step 0: Configuring AWS security group...")
-    if not configure_security_group():
-        print("✗ Warning: Could not configure security group automatically")
-        print("  Continuing with deployment - you may need to configure manually")
+    sg_result = configure_security_group()
+    if not sg_result:
+        print("⚠ MANUAL STEP REQUIRED:")
+        print("  Please add an inbound rule to your EC2 security group:")
+        print("  - Type: Custom TCP")
+        print("  - Protocol: TCP")
+        print("  - Port: 8050")
+        print("  - Source: 0.0.0.0/0")
+        print("  After adding the rule, the app will be accessible.")
+        print("")
     
     # Step 1: Clone/update repository
     print("Step 1: Setting up repository...")
