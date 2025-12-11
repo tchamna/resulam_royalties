@@ -84,11 +84,29 @@ jobs:
               done
             fi
             
+            # Determine which Docker Compose command to use
+            if docker compose version &>/dev/null; then
+              COMPOSE_CMD="docker compose"
+              echo "Using Docker Compose V2: docker compose"
+            elif command -v docker-compose &>/dev/null; then
+              COMPOSE_CMD="docker-compose"
+              echo "Using Docker Compose V1: docker-compose"
+            else
+              echo "❌ Docker Compose not found. Installing Docker Compose V2..."
+              sudo dnf install -y docker-compose-plugin || {
+                echo "Failed to install docker-compose-plugin, trying alternative..."
+                COMPOSE_URL="https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64"
+                sudo curl -L "$COMPOSE_URL" -o /usr/local/bin/docker-compose
+                sudo chmod +x /usr/local/bin/docker-compose
+                COMPOSE_CMD="docker-compose"
+              }
+            fi
+            
             # Stop and remove existing container
-            docker compose down || true
+            $COMPOSE_CMD down || true
             
             # Build and start new container
-            docker compose up -d --build
+            $COMPOSE_CMD up -d --build
             
             # Wait for container to be healthy
             echo "⏳ Waiting for container to be healthy..."
