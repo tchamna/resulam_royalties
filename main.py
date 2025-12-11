@@ -6,6 +6,7 @@ Run this file to start the dashboard server.
 """
 import sys
 import os
+import argparse
 from pathlib import Path
 
 # Add src to path
@@ -26,6 +27,13 @@ from src.config import (
 
 def main():
     """Main application function"""
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Resulam Royalties Dashboard')
+    parser.add_argument('--host', type=str, default='127.0.0.1', help='Host to bind to (default: 127.0.0.1)')
+    parser.add_argument('--port', type=int, default=8050, help='Port to bind to (default: 8050)')
+    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    args = parser.parse_args()
     
     print("\n" + "="*70)
     print("📚 RESULAM ROYALTIES DASHBOARD")
@@ -73,7 +81,7 @@ def main():
     print("\n🚀 Starting dashboard...")
     try:
         dashboard = create_dashboard(data)
-        dashboard.run()
+        dashboard.run(host=args.host, port=args.port, debug=args.debug)
     except Exception as e:
         print(f"\n❌ Error starting dashboard: {e}")
         raise
