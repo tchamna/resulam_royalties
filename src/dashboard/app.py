@@ -425,8 +425,20 @@ class ResulamDashboard:
             # Store to track if we've already reloaded for this container start
             dcc.Store(id='reload-state', storage_type='local', data={'last_start_time': 0, 'has_reloaded': False}),
             
-            # Hidden div to trigger page reload via clientside callback
-            html.Div(id='reload-trigger', style={'display': 'none'}),
+            # Store to signal data refresh without full reload
+            dcc.Store(id='data-refresh-signal', storage_type='memory'),
+            
+            # Toast notification for data updates
+            dbc.Toast(
+                "New data available! Dashboard updated.",
+                id="data-update-toast",
+                header="Data Synced",
+                is_open=False,
+                dismissable=True,
+                duration=5000,
+                icon="success",
+                style={"position": "fixed", "top": 66, "right": 10, "width": 350, "zIndex": 9999},
+            ),
             
             # Footer
             html.Hr(),
@@ -441,34 +453,16 @@ class ResulamDashboard:
     def _register_callbacks(self):
         """Register all dashboard callbacks"""
         
-        # Client-side callback to reload page when triggered
-        self.app.clientside_callback(
-            """
-            function(reload_signal) {
-                if (reload_signal === true) {
-                    console.log('Container restarted, reloading page...');
-                    setTimeout(function() {
-                        window.location.reload();
-                    }, 500);
-                }
-                return window.dash_clientside.no_update;
-            }
-            """,
-            Output('reload-trigger', 'children'),
-            Input('reload-trigger', 'data-reload'),
-            prevent_initial_call=True
-        )
-        
         # Server-side callback to check for container restarts by checking start time
         @self.app.callback(
-            [Output('reload-trigger', 'data-reload'),
+            [Output('data-refresh-signal', 'data'),
              Output('reload-state', 'data')],
             Input('refresh-interval', 'n_intervals'),
             State('reload-state', 'data'),
             prevent_initial_call=True
         )
         def check_container_restart(n, reload_state):
-            """Check if container recently restarted - trigger reload only once"""
+            """Check if container recently restarted - trigger data refresh only once"""
             try:
                 import time
                 import os
@@ -481,7 +475,6 @@ class ResulamDashboard:
                     
                     # Check if this is a NEW container start (different from last known start)
                     last_start_time = reload_state.get('last_start_time', 0) if reload_state else 0
-                    has_reloaded = reload_state.get('has_reloaded', False) if reload_state else False
                     
                     # Only process if this is a different container instance
                     if start_time != last_start_time:
@@ -489,24 +482,36 @@ class ResulamDashboard:
                         current_time = time.time()
                         uptime_seconds = current_time - start_time
                         
-                        # Only trigger reload if uptime < 600 seconds (10 minutes)
+                        # Only trigger refresh if uptime < 600 seconds (10 minutes)
                         if uptime_seconds < 600:
-                            print(f"🔄 New container detected - uptime: {uptime_seconds:.1f}s - Triggering page reload")
-                            # Always trigger reload for new container, ignoring previous state
-                            return True, {'last_start_time': start_time, 'has_reloaded': True}
+                            print(f"🔄 New container detected - uptime: {uptime_seconds:.1f}s - Triggering data refresh")
+                            # Trigger data refresh and update state
+                            return {'timestamp': current_time}, {'last_start_time': start_time, 'has_reloaded': True}
                         else:
-                            # Too old - just update state without reloading
-                            return False, {'last_start_time': start_time, 'has_reloaded': False}
+                            # Too old - just update state without refreshing
+                            return dash.no_update, {'last_start_time': start_time, 'has_reloaded': False}
                     
                     # Same container instance - no action needed
-                    return False, reload_state
+                    return dash.no_update, reload_state
                 
-                # Normal operation - no reload needed
-                return False, reload_state
+                # Normal operation - no action needed
+                return dash.no_update, reload_state
             except Exception as e:
                 print(f"❌ Error checking uptime: {e}")
-                return False, reload_state if reload_state else {'last_start_time': 0, 'has_reloaded': False}
+                return dash.no_update, reload_state if reload_state else {'last_start_time': 0, 'has_reloaded': False}
         
+        # Callback to show toast when data is refreshed
+        @self.app.callback(
+            Output("data-update-toast", "is_open"),
+            Input("data-refresh-signal", "data"),
+            prevent_initial_call=True
+        )
+        def show_update_toast(signal_data):
+            """Show toast notification when data is refreshed"""
+            if signal_data:
+                return True
+            return False
+
         # Callback to update the year-filter-store when a year is selected
         @self.app.callback(
             Output("sales-overview-section", "style"),
@@ -521,10 +526,14 @@ class ResulamDashboard:
 
         @self.app.callback(
             Output("year-filter-store", "data"),
-            Input("year-filter", "value")
+            Input("year-filter", "value"),
+            Input("data-refresh-signal", "data")
         )
-        def update_year_store(selected_value):
-            """Update year store based on dropdown selection"""
+        def update_year_store(selected_value, refresh_signal):
+            """Update year store based on dropdown selection or data refresh"""
+            # Note: refresh_signal is just a trigger to re-run this callback
+            # which will pick up the new self.available_years from the new container instance
+            
             if selected_value == "lifetime":
                 # Return all years for lifetime view
                 return sorted(self.available_years, reverse=True)
