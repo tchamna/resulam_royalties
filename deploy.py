@@ -247,12 +247,13 @@ def deploy():
     
     # Step 2: Setup Python venv and install dependencies
     print("\nStep 2: Setting up Python environment...")
-    # Remove old venv to avoid binary incompatibility issues
+    # Remove old venv and pip cache to avoid binary incompatibility issues
     cmd = (f"cd {APP_DIR} && "
-           f"rm -rf venv && "
+           f"rm -rf venv ~/.cache/pip && "
            f"python3 -m venv venv && "
            f"source venv/bin/activate && "
-           f"pip install -q --upgrade pip setuptools wheel")
+           f"pip install -q --upgrade pip setuptools wheel && "
+           f"pip cache purge 2>/dev/null || true")
     
     # Install from requirements.txt if it exists (includes numpy and pandas with correct versions)
     cmd += f" && if [ -f requirements.txt ]; then pip install -q --no-cache-dir -r requirements.txt; fi"
