@@ -19,6 +19,7 @@ APP_DIR = "/home/ec2-user/apps/resulam-royalties"
 S3_BUCKET = "resulam-royalties"
 AWS_REGION = "us-east-1"
 CURRENT_YEAR = datetime.now().year
+DOMAIN_NAME = "resulam-royalties.tchamna.com"  
 
 def ssh(cmd):
     """Execute command on EC2 via SSH"""
@@ -75,6 +76,32 @@ def configure_security_group():
             
     except Exception as e:
         return False
+
+def configure_https():
+    """Configure HTTPS with Let's Encrypt and Certbot"""
+    try:
+        # Install certbot and nginx plugin
+        cmd = "sudo yum install -y certbot python3-certbot-nginx"
+        success, out, err = ssh(cmd)
+        if not success:
+            print(f"⚠ Could not install certbot: {err[:60]}")
+            return False
+        
+        print(f"  Certbot installed.")
+        print(f"  To obtain SSL certificate for {DOMAIN_NAME}:")
+        print(f"  1. Ensure DNS points {DOMAIN_NAME} → {EC2_IP}")
+        print(f"  2. SSH to instance:")
+        print(f"     ssh -i {SSH_KEY} {EC2_USER}@{EC2_IP}")
+        print(f"  3. Run Certbot:")
+        print(f"     sudo certbot --nginx -d {DOMAIN_NAME}")
+        print(f"  4. Follow prompts to set up HTTPS")
+        print(f"")
+        print(f"  Certbot will auto-renew certificates (runs daily).")
+        return True
+        
+    except Exception as e:
+        print(f"⚠ HTTPS configuration warning: {e}")
+        return True  # Don't fail deployment
 
 def deploy():
     print("\n" + "="*60)
@@ -189,20 +216,61 @@ WantedBy=multi-user.target
     server 127.0.0.1:8051;
 }}
 
+# HTTP server block
 server {{
-    listen {port};
-    server_name _;
+    listen 80;
+    server_name {domain};
     client_max_body_size 50M;
 
+    # For Let's Encrypt validation
+    location /.well-known/acme-challenge/ {{
+        root /var/www/certbot;
+    }}
+
+    # Serve app over HTTP
     location / {{
         proxy_pass http://resulam_app;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto http;
         proxy_read_timeout 120s;
     }}
-}}""".format(port=APP_PORT)
+}}
+
+# HTTPS server block (uncomment after running certbot)
+# server {{
+#     listen 443 ssl http2;
+#     server_name {domain};
+#     client_max_body_size 50M;
+#
+#     ssl_certificate /etc/letsencrypt/live/{domain}/fullchain.pem;
+#     ssl_certificate_key /etc/letsencrypt/live/{domain}/privkey.pem;
+#     ssl_protocols TLSv1.2 TLSv1.3;
+#     ssl_ciphers HIGH:!aNULL:!MD5;
+#     ssl_prefer_server_ciphers on;
+#     ssl_session_cache shared:SSL:10m;
+#     ssl_session_timeout 10m;
+#
+#     location / {{
+#         proxy_pass http://resulam_app;
+#         proxy_http_version 1.1;
+#         proxy_set_header Host $host;
+#         proxy_set_header X-Real-IP $remote_addr;
+#         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto https;
+#         proxy_read_timeout 120s;
+#     }}
+# }}
+#
+# # Redirect HTTP to HTTPS
+# server {{
+#     listen 80;
+#     server_name {domain};
+#     return 301 https://$host$request_uri;
+# }}
+""".format(domain=DOMAIN_NAME)
     
     cmd = (f"cat > /tmp/resulam.conf << 'ENDNGINX'\n"
            f"{nginx_template}\n"
@@ -250,8 +318,12 @@ server {{
         return False
     print("✓ Nginx restarted")
     
-    # Step 8: Verify app is responding
-    print("\nStep 8: Verifying deployment...")
+    # Step 8: Configure HTTPS (optional)
+    print("\nStep 8: Setting up HTTPS support...")
+    configure_https()
+    
+    # Step 9: Verify app is responding
+    print("\nStep 9: Verifying deployment...")
     cmd = "curl -s http://localhost:{0} 2>&1 | head -1".format(APP_PORT)
     success, out, err = ssh(cmd)
     if success and out.strip():
@@ -262,20 +334,33 @@ server {{
     print("✓ DEPLOYMENT COMPLETE")
     print("="*60)
     print("\n📍 ACCESS YOUR APP:")
-    print("   http://{0}:{1}".format(EC2_IP, APP_PORT))
-    print("\n📍 OTHER APPS:")
-    print("   http://{0} (main routing)".format(EC2_IP))
+    print("   HTTP:  http://{0}".format(DOMAIN_NAME))
+    print("   HTTPS: (configure with certbot below)")
+    print("\n🔒 SETUP HTTPS (Let's Encrypt):")
+    print("   1. Ensure DNS resolves: {0} → {1}".format(DOMAIN_NAME, EC2_IP))
+    print("   2. SSH to EC2:")
+    print("      ssh -i {0} {1}@{2}".format(SSH_KEY, EC2_USER, EC2_IP))
+    print("   3. Run Certbot:")
+    print("      sudo certbot --nginx -d {0}".format(DOMAIN_NAME))
+    print("   4. Select redirect HTTP→HTTPS when prompted")
+    print("   5. Certificates auto-renew daily")
     print("\n📋 CONFIGURATION:")
+    print("   Domain:         {0}".format(DOMAIN_NAME))
     print("   App Directory:  {0}".format(APP_DIR))
     print("   Service Name:   resulam-royalties")
-    print("   Port:           {0}".format(APP_PORT))
+    print("   Internal Port:  8051 (127.0.0.1)")
+    print("   Public Port:    80/443 (via nginx)")
     print("   PYTHONPATH:     {0}".format(APP_DIR))
     print("   Venv:           {0}/venv".format(APP_DIR))
-    print("   Security Group: Port {0} (inbound from 0.0.0.0/0)".format(APP_PORT))
     print("\n💡 MANAGE SERVICE:")
     print("   ssh -i {0} {1}@{2}".format(SSH_KEY, EC2_USER, EC2_IP))
     print("   sudo systemctl status resulam-royalties")
+    print("   sudo systemctl restart resulam-royalties")
     print("   sudo journalctl -u resulam-royalties -f")
+    print("\n📜 CERTBOT COMMANDS:")
+    print("   sudo certbot renew --dry-run  # Test auto-renewal")
+    print("   sudo certbot certificates     # View installed certs")
+    print("   sudo certbot revoke --cert-name {0}  # Revoke cert".format(DOMAIN_NAME))
     print("\n")
     
     return True
