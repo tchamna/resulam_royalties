@@ -516,6 +516,35 @@ class ResulamDashboard:
                 return True
             return False
 
+        # Callback to update filter options when data is refreshed
+        @self.app.callback(
+            Output("year-filter", "options"),
+            Output("language-filter", "options"),
+            Output("sales-language-display-mode", "options"),
+            Input("data-refresh-signal", "data"),
+            prevent_initial_call=True
+        )
+        def update_filter_options(refresh_signal):
+            """Update filter options when new data is available"""
+            # Get updated years
+            years_reversed = sorted(self.available_years, reverse=True)
+            year_options = [{"label": "Life time", "value": "lifetime"}] + \
+                           [{"label": str(year), "value": year} for year in years_reversed]
+            
+            # Get updated languages
+            all_languages = sorted(self.royalties['Language'].unique().tolist())
+            language_options = [{"label": "All Languages", "value": "all"}] + \
+                               [{"label": lang, "value": lang} for lang in all_languages]
+            
+            # Get updated display mode options
+            display_mode_options = (
+                [{"label": "All (Stacked)", "value": "all_stacked"},
+                 {"label": "All (Grouped)", "value": "all_grouped"}] +
+                [{"label": lang, "value": f"language::{lang}"} for lang in all_languages]
+            )
+            
+            return year_options, language_options, display_mode_options
+
         # Callback to update the year-filter-store when a year is selected
         @self.app.callback(
             Output("sales-overview-section", "style"),
