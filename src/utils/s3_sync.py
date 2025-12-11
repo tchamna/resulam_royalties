@@ -118,8 +118,9 @@ def background_sync_worker(bucket: str, files: List[Tuple[str, str]], region: st
                 if download_s3_files(bucket, files_to_update, region, quiet=True):
                     print(f"✅ [{timestamp}] S3 sync completed - Restarting container to reload data...")
                     # Exit the process to trigger container restart (Docker --restart unless-stopped)
-                    import sys
-                    sys.exit(0)
+                    # Use os._exit() instead of sys.exit() because we're in a daemon thread
+                    import os
+                    os._exit(0)
                 else:
                     print(f"⚠️  [{timestamp}] Some files failed to sync")
         
