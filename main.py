@@ -5,10 +5,14 @@ This is the refactored, production-ready version of the original script.
 Run this file to start the dashboard server.
 """
 import sys
+import os
 from pathlib import Path
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent))
+
+# Debug: Show environment variables
+print(f"\n🔍 DEBUG: USE_S3_DATA environment variable = {os.getenv('USE_S3_DATA', 'NOT SET')}")
 
 from src.data import load_and_process_all_data
 from src.dashboard import create_dashboard
