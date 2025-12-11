@@ -82,6 +82,15 @@ jobs:
               for file in "${FILES[@]}"; do
                 aws s3 cp s3://${{ env.S3_BUCKET }}/$file data/$file || echo "Warning: Could not download $file"
               done
+            else
+              echo "⚠️  S3_DATA_FILES not configured. Ensure data files exist in the data directory."
+              echo "   Creating data directory structure..."
+              mkdir -p data
+              
+              # List expected data files
+              echo "   Expected files in data/:"
+              echo "   - Resulam_books_database_Amazon_base_de_donnee_livres.csv"
+              echo "   - KDP_OrdersResulamBookSales2015_2025RoyaltiesReportsHistory.xlsx"
             fi
             
             # Stop and remove existing container
@@ -91,12 +100,17 @@ jobs:
             # Build the Docker image
             docker build -t resulam-royalties:latest .
             
-            # Run the container
+            # Run the container with USE_S3_DATA=true if S3 is configured
+            USE_S3_FLAG="false"
+            if [ ! -z "${{ env.S3_DATA_FILES }}" ]; then
+              USE_S3_FLAG="true"
+            fi
+            
             docker run -d \
               --name resulam-royalties \
               --restart unless-stopped \
               -p 8050:8050 \
-              -e USE_S3_DATA=${USE_S3_DATA:-false} \
+              -e USE_S3_DATA=$USE_S3_FLAG \
               -e S3_BUCKET=${{ env.S3_BUCKET }} \
               -e AWS_DEFAULT_REGION=${{ env.AWS_REGION }} \
               -e AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }} \
@@ -104,22 +118,29 @@ jobs:
               -v $(pwd)/data:/app/data:ro \
               resulam-royalties:latest
             
-            # Wait for container to be healthy
-            echo "⏳ Waiting for container to be healthy..."
-            for i in {1..30}; do
-              if docker ps | grep -q resulam-royalties; then
-                if [ "$(docker inspect --format='{{.State.Health.Status}}' resulam-royalties 2>/dev/null)" = "healthy" ]; then
-                  echo "✅ Container is healthy!"
-                  break
-                fi
-              fi
-              echo "Attempt $i/30: Waiting..."
-              sleep 2
-            done
+            # Wait for container to start and check logs
+            echo "⏳ Waiting for container to start..."
+            sleep 5
             
-            # Show container status
-            docker ps -a | grep resulam-royalties || true
-            docker logs resulam-royalties --tail 20 || true
+            # Check if container is running
+            if docker ps | grep -q resulam-royalties; then
+              echo "✅ Container is running!"
+              echo ""
+              echo "📋 Container logs (last 50 lines):"
+              docker logs resulam-royalties --tail 50
+              echo ""
+              echo "🔍 Container status:"
+              docker ps -a | grep resulam-royalties
+            else
+              echo "❌ Container failed to start!"
+              echo ""
+              echo "📋 Container logs:"
+              docker logs resulam-royalties || true
+              echo ""
+              echo "🔍 Container status:"
+              docker ps -a | grep resulam-royalties || true
+              exit 1
+            fi
           ENDSSH
 
       - name: Check application logs
