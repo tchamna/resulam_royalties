@@ -65,7 +65,12 @@ def get_env(key, default=None, required=False):
 EC2_IP = get_env("EC2_IP") or get_env("EC2_HOST")
 EC2_USER = get_env("EC2_USER")
 SSH_KEY_PATH = get_env("SSH_KEY_PATH") or get_env("EC2_SSH_KEY")
-GIT_REPO = get_env("GIT_REPO")
+GIT_REPO_RAW = get_env("GIT_REPO")
+# Handle both full URLs and GitHub short format (owner/repo)
+if GIT_REPO_RAW and not GIT_REPO_RAW.startswith("http"):
+    GIT_REPO = f"https://github.com/{GIT_REPO_RAW}.git"
+else:
+    GIT_REPO = GIT_REPO_RAW
 APP_PORT = int(get_env("APP_PORT") or "8050")
 APP_DIR = get_env("APP_DIR")
 S3_BUCKET = get_env("S3_BUCKET")
