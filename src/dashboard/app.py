@@ -71,6 +71,10 @@ class ResulamDashboard:
             assets_folder=str(assets_path)
         )
         
+        # Set secret key for session persistence across restarts
+        import os
+        self.app.server.secret_key = os.getenv('FLASK_SECRET_KEY', 'resulam-royalties-secret-key-2025')
+        
         # Register webhook blueprint for SNS notifications
         try:
             from ..api import webhooks_bp
@@ -552,10 +556,13 @@ class ResulamDashboard:
             Output("metric-returns", "children"),
             Input("year-filter-store", "data"),
             Input("language-filter", "value"),
+            Input("data-refresh-signal", "data"),
             prevent_initial_call=False
         )
-        def update_metrics(selected_years, selected_language):
+        def update_metrics(selected_years, selected_language, refresh_signal):
             """Update metrics based on selected years and language"""
+            # refresh_signal is just a trigger to ensure metrics update when data changes
+            
             if not selected_years:  # If no years selected, show all
                 filtered_df = self.royalties
                 filtered_exploded = self.royalties_exploded
@@ -581,16 +588,17 @@ class ResulamDashboard:
                 f"${metrics['net_revenue_usd']:,.2f}",
                 str(metrics['unique_titles']),
                 str(metrics['unique_authors']),
-                f"{int(total_refunded):,}"
-            )
-        
         @self.app.callback(
             Output("sales-trend-title", "children"),
             Output("sales-trend-chart", "figure"),
             Input("year-filter-store", "data"),
             Input("language-filter", "value"),
+            Input("data-refresh-signal", "data"),
             prevent_initial_call=False
         )
+        def update_sales_trend(selected_years, selected_language, refresh_signal):
+            """Update sales trend chart with dynamic title"""
+            trend_data = self.royalties
         def update_sales_trend(selected_years, selected_language):
             """Update sales trend chart with dynamic title"""
             trend_data = self.royalties
@@ -605,16 +613,17 @@ class ResulamDashboard:
             from src.visualization.charts import SalesCharts
             fig = SalesCharts.books_sold_per_year(trend_data, title=trend_title)
             return trend_title, fig
-        
         @self.app.callback(
             Output("sales-by-language-chart", "figure"),
             Input("year-filter-store", "data"),
             Input("language-filter", "value"),
             Input("sales-language-display-mode", "value"),
+            Input("data-refresh-signal", "data"),
             prevent_initial_call=False
         )
-        def update_sales_by_language(selected_years, selected_language, display_mode):
+        def update_sales_by_language(selected_years, selected_language, display_mode, refresh_signal):
             """Update sales by language stacked chart by year"""
+            if not selected_years:guage stacked chart by year"""
             if not selected_years:
                 filtered_df = self.royalties
             else:
@@ -1514,16 +1523,17 @@ class ResulamDashboard:
         def toggle_returns_modal(open_clicks, close_clicks, is_open):
             """Toggle returns details modal"""
             return not is_open
-        
         # Populate returns table
         @self.app.callback(
             Output("returns-table-content", "children"),
             Input("year-filter-store", "data"),
             Input("language-filter", "value"),
+            Input("data-refresh-signal", "data"),
             prevent_initial_call=False
         )
-        def update_returns_table(selected_years, selected_language):
+        def update_returns_table(selected_years, selected_language, refresh_signal):
             """Show books with refunds"""
+            if not selected_years:unds"""
             if not selected_years:
                 filtered_df = self.royalties
             else:
