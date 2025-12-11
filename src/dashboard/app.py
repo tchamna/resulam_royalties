@@ -71,6 +71,14 @@ class ResulamDashboard:
             assets_folder=str(assets_path)
         )
         
+        # Register webhook blueprint for SNS notifications
+        try:
+            from ..api import webhooks_bp
+            self.app.server.register_blueprint(webhooks_bp)
+            print("✅ Webhook endpoints registered: /api/s3-webhook")
+        except Exception as e:
+            print(f"⚠️  Warning: Could not register webhooks: {e}")
+        
         # Add custom CSS for theme switching
         self.app.index_string = '''
         <!DOCTYPE html>

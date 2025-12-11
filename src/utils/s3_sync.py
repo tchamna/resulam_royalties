@@ -116,7 +116,10 @@ def background_sync_worker(bucket: str, files: List[Tuple[str, str]], region: st
                 print(f"\n🔄 [{timestamp}] Detected {len(files_to_update)} updated file(s) in S3, syncing...")
                 
                 if download_s3_files(bucket, files_to_update, region, quiet=True):
-                    print(f"✅ [{timestamp}] S3 sync completed - Dashboard will reflect new data on next page refresh")
+                    print(f"✅ [{timestamp}] S3 sync completed - Restarting container to reload data...")
+                    # Exit the process to trigger container restart (Docker --restart unless-stopped)
+                    import sys
+                    sys.exit(0)
                 else:
                     print(f"⚠️  [{timestamp}] Some files failed to sync")
         

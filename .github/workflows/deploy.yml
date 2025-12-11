@@ -94,6 +94,7 @@ jobs:
             docker build -t resulam-royalties:latest .
             
             # Run the container with AWS credentials mounted for automatic S3 sync
+            # SNS webhook provides instant updates, background sync is fallback
             docker run -d \
               --name resulam-royalties \
               --restart unless-stopped \
@@ -102,7 +103,7 @@ jobs:
               -e USE_S3_DATA=true \
               -e S3_BUCKET=${{ env.S3_BUCKET }} \
               -e AWS_DEFAULT_REGION=${{ env.AWS_REGION }} \
-              -e AUTO_SYNC_INTERVAL=300 \
+              -e AUTO_SYNC_INTERVAL=60 \
               resulam-royalties:latest
             
             # Wait for container to start and check logs
