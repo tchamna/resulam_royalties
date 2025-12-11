@@ -28,6 +28,30 @@ from urllib.parse import urlparse
 # CONFIGURATION - Read from environment variables or defaults
 # ============================================================================
 
+def load_env_file(env_file='.env'):
+    """Load environment variables from .env file into os.environ"""
+    if not os.path.exists(env_file):
+        return
+    
+    try:
+        with open(env_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                # Skip comments and empty lines
+                if line and not line.startswith('#'):
+                    if '=' in line:
+                        key, value = line.split('=', 1)
+                        key = key.strip()
+                        value = value.strip()
+                        # Only set if not already in environment
+                        if key not in os.environ:
+                            os.environ[key] = value
+    except Exception as e:
+        print(f"⚠️  Warning: Could not read {env_file}: {e}")
+
+# Load .env file at startup (before reading environment variables)
+load_env_file('.env')
+
 def get_env(key, default=None, required=False):
     """Get environment variable with optional default and validation"""
     value = os.getenv(key, default)
@@ -464,14 +488,21 @@ server {{
     
     return True
 
-def setup_github_secrets():
-    """Setup GitHub repository secrets from environment variables"""
+def setup_github_secrets(env_file='.env'):
+    """Setup GitHub repository secrets from environment variables or .env file"""
     try:
+        print("\n🔐 Setting up GitHub Secrets")
+        print("=" * 70)
+        
+        # Environment variables already loaded from .env at startup
+        
         # Check if gh CLI is available
         result = subprocess.run(['gh', '--version'], capture_output=True, text=True)
         if result.returncode != 0:
             print("❌ GitHub CLI (gh) not installed. Install from: https://cli.github.com")
             return False
+        
+        print("✅ GitHub CLI found")
         
         # Get repository info
         result = subprocess.run(['git', 'config', '--get', 'remote.origin.url'], 
@@ -490,8 +521,7 @@ def setup_github_secrets():
         owner = repo_url.split('/')[-2]
         full_repo = f"{owner}/{repo}"
         
-        print(f"\n🔐 Setting up GitHub Secrets for: {full_repo}")
-        print("=" * 70)
+        print(f"📦 Repository: {full_repo}")
         
         # Map environment variables to GitHub secrets
         secrets_map = {
@@ -506,15 +536,18 @@ def setup_github_secrets():
         }
         
         # Handle EC2_SSH_KEY - load from file if path provided
+        ssh_key_content = SSH_KEY_PATH
         if SSH_KEY_PATH and os.path.exists(SSH_KEY_PATH):
             try:
                 with open(SSH_KEY_PATH, 'r') as f:
-                    secrets_map["EC2_SSH_KEY"] = f.read()
+                    ssh_key_content = f.read()
+                print(f"📁 Loaded SSH key from: {SSH_KEY_PATH}")
             except Exception as e:
                 print(f"⚠️  Could not read SSH key from {SSH_KEY_PATH}: {e}")
-                secrets_map["EC2_SSH_KEY"] = SSH_KEY_PATH
-        else:
-            secrets_map["EC2_SSH_KEY"] = SSH_KEY_PATH
+        
+        secrets_map["EC2_SSH_KEY"] = ssh_key_content
+        
+        print(f"\n📝 Setting up {len(secrets_map)} secrets...\n")
         
         success_count = 0
         fail_count = 0
@@ -533,23 +566,24 @@ def setup_github_secrets():
                                           stdout=subprocess.PIPE,
                                           stderr=subprocess.PIPE,
                                           text=True)
-                stdout, stderr = process.communicate(input=str(secret_value))
+                stdout, stderr = process.communicate(input=str(secret_value), timeout=10)
                 
                 if process.returncode == 0:
                     print(f"✅ {secret_name}")
                     success_count += 1
                 else:
-                    print(f"❌ {secret_name}: {stderr.strip()}")
+                    print(f"❌ {secret_name}: {stderr.strip()[:80]}")
                     fail_count += 1
             except Exception as e:
-                print(f"❌ {secret_name}: {e}")
+                print(f"❌ {secret_name}: {str(e)[:80]}")
                 fail_count += 1
         
         print("\n" + "=" * 70)
         print(f"✅ GitHub Secrets Setup Complete")
         print(f"   Successful: {success_count}")
         print(f"   Failed: {fail_count}")
-        print(f"\n📋 To verify, run: gh secret list --repo {full_repo}")
+        print(f"\n📋 To verify, run:")
+        print(f"   gh secret list --repo {full_repo}")
         
         return fail_count == 0
         
@@ -561,7 +595,17 @@ if __name__ == '__main__':
     try:
         # Check for --setup-secrets flag
         if '--setup-secrets' in sys.argv:
-            success = setup_github_secrets()
+            success = setup_github_secrets('.env')
+            sys.exit(0 if success else 1)
+        
+        # Check for --all flag (setup secrets + deploy)
+        if '--all' in sys.argv:
+            print("\n🚀 Full Setup: GitHub Secrets + Deployment\n")
+            secrets_ok = setup_github_secrets('.env')
+            if not secrets_ok:
+                print("\n⚠️  GitHub secrets setup had issues, but continuing with deployment...")
+            print("\n" + "=" * 70)
+            success = deploy()
             sys.exit(0 if success else 1)
         
         success = deploy()
