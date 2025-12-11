@@ -102,6 +102,7 @@ jobs:
               -e USE_S3_DATA=true \
               -e S3_BUCKET=${{ env.S3_BUCKET }} \
               -e AWS_DEFAULT_REGION=${{ env.AWS_REGION }} \
+              -e AUTO_SYNC_INTERVAL=300 \
               resulam-royalties:latest
             
             # Wait for container to start and check logs
