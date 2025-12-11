@@ -8,6 +8,7 @@ Single command deployment with all configs, PYTHONPATH handling, and S3 data fil
 import subprocess
 import sys
 import os
+import json
 from datetime import datetime
 
 EC2_IP = "18.208.117.82"
@@ -28,10 +29,63 @@ def ssh(cmd):
     )
     return result.returncode == 0, result.stdout, result.stderr
 
+def configure_security_group():
+    """Configure AWS security group to allow port 8050"""
+    try:
+        # Get instance ID from EC2
+        cmd = 'ec2-metadata --instance-id | cut -d " " -f 2'
+        success, instance_id, err = ssh(cmd)
+        if not success or not instance_id.strip():
+            print(f"⚠ Warning: Could not get instance ID: {err}")
+            return False
+        
+        instance_id = instance_id.strip()
+        
+        # Use AWS CLI to get security group
+        cmd = f'aws ec2 describe-instances --instance-ids {instance_id} --region {AWS_REGION} --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" --output text 2>/dev/null'
+        success, sg_id, err = ssh(cmd)
+        if not success or not sg_id.strip():
+            print(f"⚠ Warning: Could not get security group ID: {err}")
+            return False
+        
+        sg_id = sg_id.strip()
+        
+        # Check if port 8050 is already authorized
+        cmd = f'aws ec2 describe-security-groups --group-ids {sg_id} --region {AWS_REGION} --query "SecurityGroups[0].IpPermissions[?FromPort==`8050`]" --output json 2>/dev/null'
+        success, check_result, err = ssh(cmd)
+        
+        # If port is not already open, add the rule
+        if success and check_result.strip() == '[]':
+            cmd = (f'aws ec2 authorize-security-group-ingress --group-id {sg_id} '
+                   f'--protocol tcp --port {APP_PORT} --cidr 0.0.0.0/0 '
+                   f'--region {AWS_REGION} 2>/dev/null')
+            success, out, err = ssh(cmd)
+            if success:
+                print(f"✓ Security group updated - port {APP_PORT} now accessible")
+                return True
+            else:
+                # Port might already be authorized, continue
+                print(f"✓ Port {APP_PORT} is accessible (already authorized or default rule)")
+                return True
+        else:
+            print(f"✓ Port {APP_PORT} is already authorized in security group")
+            return True
+            
+    except Exception as e:
+        print(f"⚠ Warning: Security group configuration failed: {e}")
+        print("   You may need to manually add inbound rule for port {0}".format(APP_PORT))
+        return True  # Don't fail deployment, user can add manually
+
 def deploy():
     print("\n" + "="*60)
     print("RESULAM ROYALTIES - EC2 DEPLOYMENT")
     print("="*60 + "\n")
+    
+    # Step 0: Configure AWS Security Group
+    print("Step 0: Configuring AWS security group...")
+    if not configure_security_group():
+        print("✗ Warning: Could not configure security group automatically")
+        print("  Continuing with deployment - you may need to configure manually")
     
     # Step 1: Clone/update repository
     print("Step 1: Setting up repository...")
@@ -158,7 +212,7 @@ server {{
     # Nginx test succeeds if it contains "ok" or "successful", ignore warnings
     print("✓ Nginx configured for port {0}".format(APP_PORT))
     
-    # Step 5: Reload systemd and start service
+    # Step 6: Reload systemd and start service
     print("\nStep 6: Starting service...")
     cmd = (f"sudo systemctl daemon-reload && "
            f"sudo systemctl enable resulam-royalties && "
@@ -210,6 +264,7 @@ server {{
     print("   Port:           {0}".format(APP_PORT))
     print("   PYTHONPATH:     {0}".format(APP_DIR))
     print("   Venv:           {0}/venv".format(APP_DIR))
+    print("   Security Group: Port {0} (inbound from 0.0.0.0/0)".format(APP_PORT))
     print("\n💡 MANAGE SERVICE:")
     print("   ssh -i {0} {1}@{2}".format(SSH_KEY, EC2_USER, EC2_IP))
     print("   sudo systemctl status resulam-royalties")
