@@ -489,18 +489,14 @@ class ResulamDashboard:
                         current_time = time.time()
                         uptime_seconds = current_time - start_time
                         
-                        # Only trigger reload if uptime < 600 seconds (10 minutes) AND we haven't already reloaded
+                        # Only trigger reload if uptime < 600 seconds (10 minutes)
                         if uptime_seconds < 600:
-                            # If we haven't reloaded yet, trigger reload
-                            if not has_reloaded:
-                                print(f"🔄 New container detected - uptime: {uptime_seconds:.1f}s - Triggering page reload")
-                                return True, {'last_start_time': start_time, 'has_reloaded': True}
-                            # If we already reloaded, just update state to keep has_reloaded=True
-                            else:
-                                return False, {'last_start_time': start_time, 'has_reloaded': True}
+                            print(f"🔄 New container detected - uptime: {uptime_seconds:.1f}s - Triggering page reload")
+                            # Always trigger reload for new container, ignoring previous state
+                            return True, {'last_start_time': start_time, 'has_reloaded': True}
                         else:
                             # Too old - just update state without reloading
-                            return False, {'last_start_time': start_time, 'has_reloaded': has_reloaded}
+                            return False, {'last_start_time': start_time, 'has_reloaded': False}
                     
                     # Same container instance - no action needed
                     return False, reload_state
