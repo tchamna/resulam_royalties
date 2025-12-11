@@ -464,7 +464,7 @@ server {{
     print("\n🔒 SETUP HTTPS (Let's Encrypt):")
     print("   1. Ensure DNS resolves: {0} → {1}".format(DOMAIN_NAME, EC2_IP))
     print("   2. SSH to EC2:")
-    print("      ssh -i {0} {1}@{2}".format(SSH_KEY, EC2_USER, EC2_IP))
+    print("      ssh -i {0} {1}@{2}".format(SSH_KEY_PATH, EC2_USER, EC2_IP))
     print("   3. Run Certbot:")
     print("      sudo certbot --nginx -d {0}".format(DOMAIN_NAME))
     print("   4. Select redirect HTTP→HTTPS when prompted")
