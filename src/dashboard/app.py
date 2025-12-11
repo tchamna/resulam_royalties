@@ -602,9 +602,6 @@ class ResulamDashboard:
         def update_sales_trend(selected_years, selected_language, refresh_signal):
             """Update sales trend chart with dynamic title"""
             trend_data = self.royalties
-        def update_sales_trend(selected_years, selected_language):
-            """Update sales trend chart with dynamic title"""
-            trend_data = self.royalties
             if selected_language and selected_language != "all":
                 trend_data = self.royalties[self.royalties['Language'] == selected_language]
                 total_books = trend_data['Net Units Sold'].sum()
@@ -616,6 +613,7 @@ class ResulamDashboard:
             from src.visualization.charts import SalesCharts
             fig = SalesCharts.books_sold_per_year(trend_data, title=trend_title)
             return trend_title, fig
+        
         @self.app.callback(
             Output("sales-by-language-chart", "figure"),
             Input("year-filter-store", "data"),
@@ -626,7 +624,6 @@ class ResulamDashboard:
         )
         def update_sales_by_language(selected_years, selected_language, display_mode, refresh_signal):
             """Update sales by language stacked chart by year"""
-            if not selected_years:guage stacked chart by year"""
             if not selected_years:
                 filtered_df = self.royalties
             else:
@@ -1536,7 +1533,6 @@ class ResulamDashboard:
         )
         def update_returns_table(selected_years, selected_language, refresh_signal):
             """Show books with refunds"""
-            if not selected_years:unds"""
             if not selected_years:
                 filtered_df = self.royalties
             else:
