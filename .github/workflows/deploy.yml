@@ -74,48 +74,34 @@ jobs:
             # Pull latest code
             git pull origin main
             
-            # Download data files from S3 if configured
-            if [ ! -z "${{ env.S3_DATA_FILES }}" ]; then
-              echo "📥 Downloading data files from S3..."
-              mkdir -p data
-              IFS='|' read -ra FILES <<< "${{ env.S3_DATA_FILES }}"
-              for file in "${FILES[@]}"; do
-                aws s3 cp s3://${{ env.S3_BUCKET }}/$file data/$file || echo "Warning: Could not download $file"
-              done
-            else
-              echo "⚠️  S3_DATA_FILES not configured. Ensure data files exist in the data directory."
-              echo "   Creating data directory structure..."
-              mkdir -p data
-              
-              # List expected data files
-              echo "   Expected files in data/:"
-              echo "   - Resulam_books_database_Amazon_base_de_donnee_livres.csv"
-              echo "   - KDP_OrdersResulamBookSales2015_2025RoyaltiesReportsHistory.xlsx"
-            fi
+            # Ensure AWS credentials are configured for S3 access
+            mkdir -p ~/.aws
+            echo "[default]" > ~/.aws/credentials
+            echo "aws_access_key_id = ${{ secrets.AWS_ACCESS_KEY_ID }}" >> ~/.aws/credentials
+            echo "aws_secret_access_key = ${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> ~/.aws/credentials
+            echo "[default]" > ~/.aws/config
+            echo "region = ${{ env.AWS_REGION }}" >> ~/.aws/config
+            chmod 600 ~/.aws/credentials
+            
+            # Verify AWS credentials
+            aws sts get-caller-identity || echo "Warning: AWS credentials may not be configured correctly"
             
             # Stop and remove existing container
             docker stop resulam-royalties 2>/dev/null || true
             docker rm resulam-royalties 2>/dev/null || true
             
-            # Build the Docker image
+            # Build the Docker image (data files excluded via .dockerignore)
             docker build -t resulam-royalties:latest .
             
-            # Run the container with USE_S3_DATA=true if S3 is configured
-            USE_S3_FLAG="false"
-            if [ ! -z "${{ env.S3_DATA_FILES }}" ]; then
-              USE_S3_FLAG="true"
-            fi
-            
+            # Run the container with AWS credentials mounted for automatic S3 sync
             docker run -d \
               --name resulam-royalties \
               --restart unless-stopped \
               -p 8050:8050 \
-              -e USE_S3_DATA=$USE_S3_FLAG \
+              -v ~/.aws:/root/.aws:ro \
+              -e USE_S3_DATA=true \
               -e S3_BUCKET=${{ env.S3_BUCKET }} \
               -e AWS_DEFAULT_REGION=${{ env.AWS_REGION }} \
-              -e AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }} \
-              -e AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }} \
-              -v $(pwd)/data:/app/data:ro \
               resulam-royalties:latest
             
             # Wait for container to start and check logs
