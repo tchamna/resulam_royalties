@@ -1,0 +1,35 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+venv311/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data files (will be mounted or downloaded)
+data/exchange_rates_cache.json
+
+# Logs
+*.log
+
+# Environment variables
+.env
+
+# Git
+.git/
+.gitignore

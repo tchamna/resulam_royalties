@@ -47,23 +47,59 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Deploy to EC2 using deploy.py
+      - name: Deploy to EC2 using Docker
         env:
-          EC2_IP: ${{ secrets.EC2_HOST }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
-          SSH_KEY_PATH: ~/.ssh/ec2-key.pem
-          GIT_REPO: ${{ github.repository }}
-          APP_PORT: ${{ secrets.DEPLOY_PORT || '8050' }}
           APP_DIR: ${{ secrets.APP_DIR || '/home/ec2-user/apps/resulam-royalties' }}
-          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME || 'resulam-royalties.tchamna.com' }}
           S3_BUCKET: ${{ secrets.S3_BUCKET || 'resulam-royalties' }}
           AWS_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           S3_DATA_FILES: ${{ secrets.S3_DATA_FILES }}
         run: |
-          # Run the universal deploy script
-          python deploy.py
+          echo "🚀 Deploying Docker container to EC2..."
+          
+          ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST << 'ENDSSH'
+            set -e
+            
+            # Navigate to app directory
+            cd ${{ env.APP_DIR }}
+            
+            # Pull latest code
+            git pull origin main
+            
+            # Download data files from S3 if configured
+            if [ ! -z "${{ env.S3_DATA_FILES }}" ]; then
+              echo "📥 Downloading data files from S3..."
+              mkdir -p data
+              IFS='|' read -ra FILES <<< "${{ env.S3_DATA_FILES }}"
+              for file in "${FILES[@]}"; do
+                aws s3 cp s3://${{ env.S3_BUCKET }}/$file data/$file || echo "Warning: Could not download $file"
+              done
+            fi
+            
+            # Stop and remove existing container
+            docker-compose down || true
+            
+            # Build and start new container
+            docker-compose up -d --build
+            
+            # Wait for container to be healthy
+            echo "⏳ Waiting for container to be healthy..."
+            for i in {1..30}; do
+              if docker ps | grep -q resulam-royalties; then
+                if [ "$(docker inspect --format='{{.State.Health.Status}}' resulam-royalties 2>/dev/null)" = "healthy" ]; then
+                  echo "✅ Container is healthy!"
+                  break
+                fi
+              fi
+              echo "Attempt $i/30: Waiting..."
+              sleep 2
+            done
+            
+            # Show container status
+            docker ps -a | grep resulam-royalties || true
+            docker logs resulam-royalties --tail 20 || true
+          ENDSSH
 
       - name: Check application logs
         if: always()
@@ -74,17 +110,17 @@ jobs:
         run: |
           echo "📋 Checking application status and logs..."
           ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST << 'EOF'
-            echo "=== Service Status ==="
-            sudo systemctl status resulam-royalties --no-pager || true
+            echo "=== Docker Container Status ==="
+            docker ps -a | grep resulam-royalties || echo "Container not found"
             
-            echo -e "\n=== Last 30 lines of application log ==="
-            sudo journalctl -u resulam-royalties -n 30 --no-pager || true
+            echo -e "\n=== Last 30 lines of container log ==="
+            docker logs resulam-royalties --tail 30 2>&1 || echo "No logs available"
+            
+            echo -e "\n=== Container health status ==="
+            docker inspect --format='{{.State.Health.Status}}' resulam-royalties 2>/dev/null || echo "Health check not available"
             
             echo -e "\n=== Checking if port 8050 is listening ==="
             sudo netstat -tlnp | grep 8050 || echo "Port 8050 not listening"
-            
-            echo -e "\n=== Recent Python errors ==="
-            sudo journalctl -u resulam-royalties --since "5 minutes ago" | grep -i "error\|exception\|traceback" || echo "No recent errors found"
           EOF
 
       - name: Verify deployment
