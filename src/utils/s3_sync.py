@@ -213,14 +213,13 @@ def sync_data_on_startup():
     else:
         print("⚠️  Some S3 files failed to download")
     
-    # Start background sync if enabled
-    auto_sync_interval = os.getenv('AUTO_SYNC_INTERVAL')
-    if auto_sync_interval:
-        try:
-            interval = int(auto_sync_interval)
-            if interval > 0:
-                start_background_sync(bucket, files_to_download, region, interval)
-        except ValueError:
-            logger.warning(f"Invalid AUTO_SYNC_INTERVAL value: {auto_sync_interval}")
+    # Start background sync if enabled (default to 5 minutes if not specified)
+    auto_sync_interval = os.getenv('AUTO_SYNC_INTERVAL', '300')
+    try:
+        interval = int(auto_sync_interval)
+        if interval > 0:
+            start_background_sync(bucket, files_to_download, region, interval)
+    except ValueError:
+        logger.warning(f"Invalid AUTO_SYNC_INTERVAL value: {auto_sync_interval}")
     
     return success
