@@ -422,6 +422,9 @@ class ResulamDashboard:
                 n_intervals=0
             ),
             
+            # Store to track if we've already reloaded for this container start
+            dcc.Store(id='reload-state', data={'last_start_time': 0, 'has_reloaded': False}),
+            
             # Hidden div to trigger page reload via clientside callback
             html.Div(id='reload-trigger', style={'display': 'none'}),
             
@@ -458,12 +461,14 @@ class ResulamDashboard:
         
         # Server-side callback to check for container restarts by checking start time
         @self.app.callback(
-            Output('reload-trigger', 'data-reload'),
+            [Output('reload-trigger', 'data-reload'),
+             Output('reload-state', 'data')],
             Input('refresh-interval', 'n_intervals'),
+            State('reload-state', 'data'),
             prevent_initial_call=True
         )
-        def check_container_restart(n):
-            """Check if container recently restarted"""
+        def check_container_restart(n, reload_state):
+            """Check if container recently restarted - trigger reload only once"""
             try:
                 import time
                 import os
@@ -474,20 +479,33 @@ class ResulamDashboard:
                     with open(marker_file, 'r') as f:
                         start_time = float(f.read().strip())
                     
-                    current_time = time.time()
-                    uptime_seconds = current_time - start_time
+                    # Check if this is a NEW container start (different from last known start)
+                    last_start_time = reload_state.get('last_start_time', 0) if reload_state else 0
+                    has_reloaded = reload_state.get('has_reloaded', False) if reload_state else False
                     
-                    # If uptime < 120 seconds (2 minutes), container recently restarted
-                    # Return True to trigger page reload
-                    if uptime_seconds < 120:
-                        print(f"🔄 Container uptime: {uptime_seconds:.1f}s - Triggering page reload")
-                        return True
+                    # If start time is different and we haven't reloaded yet for this instance
+                    if start_time != last_start_time:
+                        # New container detected
+                        current_time = time.time()
+                        uptime_seconds = current_time - start_time
+                        
+                        # Only trigger reload if uptime < 120 seconds (fresh restart)
+                        if uptime_seconds < 120:
+                            print(f"🔄 Container uptime: {uptime_seconds:.1f}s - Triggering page reload")
+                            # Update state: mark this container start as seen and reloaded
+                            return True, {'last_start_time': start_time, 'has_reloaded': True}
+                        else:
+                            # Old container, just update the state without reloading
+                            return False, {'last_start_time': start_time, 'has_reloaded': False}
+                    
+                    # Same container, already processed
+                    return False, reload_state
                 
                 # Normal operation - no reload needed
-                return False
+                return False, reload_state
             except Exception as e:
                 print(f"❌ Error checking uptime: {e}")
-                return False
+                return False, reload_state if reload_state else {'last_start_time': 0, 'has_reloaded': False}
         
         # Callback to update the year-filter-store when a year is selected
         @self.app.callback(
