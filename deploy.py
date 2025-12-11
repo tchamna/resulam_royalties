@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """
 Resulam Royalties - Complete EC2 Deployment Script
-Single command deployment with all configs and PYTHONPATH handling
+Single command deployment with all configs, PYTHONPATH handling, and S3 data files
 """
 
 import subprocess
 import sys
+import os
 
 EC2_IP = "18.208.117.82"
 EC2_USER = "ec2-user"
 SSH_KEY = r'C:\Users\tcham\Downloads\test-rag.pem'
 APP_PORT = 8050
 APP_DIR = "/home/ec2-user/apps/resulam-royalties"
+S3_BUCKET = "resulam-royalties"
+AWS_REGION = "us-east-1"
 
 def ssh(cmd):
     """Execute command on EC2 via SSH"""
@@ -52,26 +55,54 @@ def deploy():
         return False
     print("✓ Python environment ready with dependencies")
     
-    # Step 3: Create systemd service with PYTHONPATH
-    print("\nStep 3: Creating systemd service...")
+    # Step 3: Download data files from S3
+    print("\nStep 3: Downloading data files from S3...")
+    cmd = (f"cd {APP_DIR} && "
+           f"pip install -q boto3 && "
+           f"python3 << 'ENDS3'\n"
+           f"import boto3\n"
+           f"s3 = boto3.client('s3', region_name='{AWS_REGION}')\n"
+           f"files_to_download = [\n"
+           f"    ('Resulam_books_database_Amazon_base_de_donnee_livres.csv', 'data/Resulam_books_database_Amazon_base_de_donnee_livres.csv'),\n"
+           f"    ('KDP_OrdersResulamBookSales2015_2025RoyaltiesReportsHistory.xlsx', 'data/KDP_OrdersResulamBookSales2015_2025RoyaltiesReportsHistory.xlsx')\n"
+           f"]\n"
+           f"for src, dst in files_to_download:\n"
+           f"    try:\n"
+           f"        s3.download_file('{S3_BUCKET}', src, dst)\n"
+           f"        print(f'Downloaded {{src}}')\n"
+           f"    except Exception as e:\n"
+           f"        print(f'Warning: Could not download {{src}}: {{e}}')\n"
+           f"ENDS3")
+    success, out, err = ssh(cmd)
+    if not success:
+        print(f"⚠ Warning: Could not download all S3 files. Continuing with cache...")
+    else:
+        print("✓ Data files downloaded from S3")
+    
+    # Step 4: Create systemd service with S3 environment
+    print("\nStep 4: Creating systemd service...")
     service_template = """[Unit]
 Description=Resulam Royalties Dashboard
 After=network.target
 
 [Service]
 Type=simple
-User={user}
-WorkingDirectory={app_dir}
-Environment="PATH={app_dir}/venv/bin"
-Environment="PYTHONPATH={app_dir}"
-ExecStart={app_dir}/venv/bin/python main.py --host 0.0.0.0 --port {port}
+User=ec2-user
+WorkingDirectory=/home/ec2-user/apps/resulam-royalties
+Environment="PATH=/home/ec2-user/apps/resulam-royalties/venv/bin"
+Environment="PYTHONPATH=/home/ec2-user/apps/resulam-royalties"
+Environment="USE_S3_DATA=true"
+Environment="S3_BUCKET={S3_BUCKET}"
+Environment="AWS_DEFAULT_REGION={AWS_REGION}"
+ExecStart=/home/ec2-user/apps/resulam-royalties/venv/bin/python main.py --host 0.0.0.0 --port 8050
 Restart=always
 RestartSec=10
 StartLimitInterval=60s
 StartLimitBurst=3
 
 [Install]
-WantedBy=multi-user.target""".format(user=EC2_USER, app_dir=APP_DIR, port=APP_PORT)
+WantedBy=multi-user.target
+""".format(S3_BUCKET=S3_BUCKET, AWS_REGION=AWS_REGION)
     
     # Write service file using heredoc
     cmd = (f"cat > /tmp/resulam.service << 'ENDSERVICE'\n"
@@ -83,10 +114,10 @@ WantedBy=multi-user.target""".format(user=EC2_USER, app_dir=APP_DIR, port=APP_PO
     if not success:
         print(f"✗ ERROR: {err}")
         return False
-    print("✓ Systemd service created with PYTHONPATH")
+    print("✓ Systemd service created with S3 environment")
     
-    # Step 4: Create nginx configuration
-    print("\nStep 4: Configuring nginx...")
+    # Step 5: Create nginx configuration
+    print("\nStep 5: Configuring nginx...")
     nginx_template = """upstream resulam_app {{
     server 127.0.0.1:{port};
 }}
@@ -122,7 +153,7 @@ server {{
     print("✓ Nginx configured for port {0}".format(APP_PORT))
     
     # Step 5: Reload systemd and start service
-    print("\nStep 5: Starting service...")
+    print("\nStep 6: Starting service...")
     cmd = (f"sudo systemctl daemon-reload && "
            f"sudo systemctl enable resulam-royalties && "
            f"sudo systemctl restart resulam-royalties && "
@@ -143,8 +174,8 @@ server {{
         else:
             print("(No logs available)")
     
-    # Step 6: Restart nginx
-    print("\nStep 6: Restarting nginx...")
+    # Step 7: Restart nginx
+    print("\nStep 7: Restarting nginx...")
     cmd = "sudo systemctl restart nginx && sleep 1"
     success, out, err = ssh(cmd)
     if not success:
@@ -152,8 +183,8 @@ server {{
         return False
     print("✓ Nginx restarted")
     
-    # Step 7: Verify app is responding
-    print("\nStep 7: Verifying deployment...")
+    # Step 8: Verify app is responding
+    print("\nStep 8: Verifying deployment...")
     cmd = "curl -s http://localhost:{0} 2>&1 | head -1".format(APP_PORT)
     success, out, err = ssh(cmd)
     if success and out.strip():

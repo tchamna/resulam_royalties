@@ -131,6 +131,11 @@ dmypy.json
 *.xls
 exchange_rates_cache.json
 
+# Except for deployment data files
+!royalties_resulambooks_from_2015_2024_history_df.csv
+!royalties_exploded_2024.csv
+!royalties_per_author_2024.csv
+
 # IDE
 .vscode/
 .idea/

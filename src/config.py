@@ -15,10 +15,23 @@ NET_REVENUE_PERCENTAGE = 1  # 80% of royalties go to net revenue (after platform
 PROJECT_ROOT = Path(__file__).parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 
-# Data file paths - Update these to your actual paths
+# Data file paths - Support both local development and S3-based deployment
+import os
+_USE_S3 = os.getenv('USE_S3_DATA', 'false').lower() == 'true'
+
+# Local paths (always available for fallback/development)
 MAIN_DIR = r"G:\My Drive\Mbú'ŋwɑ̀'nì\RoyaltiesResulam"
-BOOKS_DATABASE_PATH = Path(MAIN_DIR) / "Resulam_books_database_Amazon_base_de_donnee_livres.csv"
-ROYALTIES_HISTORY_PATH = Path(MAIN_DIR) / f"KDP_OrdersResulamBookSales2015_{CURRENT_YEAR}RoyaltiesReportsHistory.xlsx"
+LOCAL_BOOKS_DATABASE_PATH = Path(MAIN_DIR) / "Resulam_books_database_Amazon_base_de_donnee_livres.csv"
+LOCAL_ROYALTIES_HISTORY_PATH = Path(MAIN_DIR) / f"KDP_OrdersResulamBookSales2015_{CURRENT_YEAR}RoyaltiesReportsHistory.xlsx"
+
+if _USE_S3:
+    # S3 paths (for production on EC2)
+    BOOKS_DATABASE_PATH = "s3://resulam-royalties/Resulam_books_database_Amazon_base_de_donnee_livres.csv"
+    ROYALTIES_HISTORY_PATH = "s3://resulam-royalties/KDP_OrdersResulamBookSales2015_2025RoyaltiesReportsHistory.xlsx"
+else:
+    # Use local paths as fallback
+    BOOKS_DATABASE_PATH = LOCAL_BOOKS_DATABASE_PATH
+    ROYALTIES_HISTORY_PATH = LOCAL_ROYALTIES_HISTORY_PATH
 
 # Author name normalization mapping
 AUTHOR_NORMALIZATION = {
