@@ -415,15 +415,15 @@ class ResulamDashboard:
             sales_overview_section,
             content,
             
-            # Interval component to check for container restarts (every 30 seconds)
+            # Interval component to check for container restarts (every 10 seconds for faster detection)
             dcc.Interval(
                 id='refresh-interval',
-                interval=30*1000,  # 30 seconds in milliseconds
+                interval=10*1000,  # 10 seconds in milliseconds
                 n_intervals=0
             ),
             
-            # Store to track last seen data timestamp
-            dcc.Store(id='data-timestamp-store', data={'timestamp': str(self.royalties['Royalty Date'].max())}),
+            # Hidden div to trigger page reload via clientside callback
+            html.Div(id='reload-trigger', style={'display': 'none'}),
             
             # Footer
             html.Hr(),
@@ -438,52 +438,48 @@ class ResulamDashboard:
     def _register_callbacks(self):
         """Register all dashboard callbacks"""
         
-        # Client-side callback to reload page when timestamp changes
+        # Client-side callback to reload page when triggered
         self.app.clientside_callback(
             """
-            function(timestamp_data) {
-                if (timestamp_data && timestamp_data.should_reload) {
-                    window.location.reload();
+            function(reload_signal) {
+                if (reload_signal === true) {
+                    console.log('Container restarted, reloading page...');
+                    setTimeout(function() {
+                        window.location.reload();
+                    }, 500);
                 }
                 return window.dash_clientside.no_update;
             }
             """,
-            Output('data-timestamp-store', 'data', allow_duplicate=True),
-            Input('data-timestamp-store', 'data'),
+            Output('reload-trigger', 'children'),
+            Input('reload-trigger', 'data-reload'),
             prevent_initial_call=True
         )
         
-        # Callback to check for container restarts by monitoring uptime
+        # Server-side callback to check for container restarts by monitoring uptime
         @self.app.callback(
-            Output('data-timestamp-store', 'data'),
+            Output('reload-trigger', 'data-reload'),
             Input('refresh-interval', 'n_intervals'),
-            State('data-timestamp-store', 'data'),
             prevent_initial_call=True
         )
-        def check_container_restart(n, current_data):
-            """Check if container restarted and signal reload"""
+        def check_container_restart(n):
+            """Check if container recently restarted"""
             try:
-                # Read container uptime
+                # Read container uptime from /proc/uptime
                 with open('/proc/uptime', 'r') as f:
                     uptime_seconds = float(f.read().split()[0])
                 
-                # If uptime < 90 seconds, container recently restarted
-                if uptime_seconds < 90:
-                    # Check if we've already processed this restart
-                    if not current_data or current_data.get('last_uptime', 999999) > uptime_seconds:
-                        # New restart detected - signal reload
-                        return {
-                            'timestamp': str(self.royalties['Royalty Date'].max()),
-                            'last_uptime': uptime_seconds,
-                            'should_reload': True
-                        }
+                # If uptime < 120 seconds (2 minutes), container recently restarted
+                # Return True to trigger page reload
+                if uptime_seconds < 120:
+                    print(f"🔄 Container uptime: {uptime_seconds:.1f}s - Triggering page reload")
+                    return True
                 
-                # Normal operation - keep existing data
-                if current_data:
-                    return {**current_data, 'should_reload': False}
-                return {'last_uptime': uptime_seconds, 'should_reload': False}
-            except Exception:
-                raise dash.exceptions.PreventUpdate
+                # Normal operation - no reload needed
+                return False
+            except Exception as e:
+                print(f"❌ Error checking uptime: {e}")
+                return False
         
         # Callback to update the year-filter-store when a year is selected
         @self.app.callback(
