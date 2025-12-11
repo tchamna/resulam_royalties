@@ -25,30 +25,46 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 # ============================================================================
-# CONFIGURATION - Update these values for your deployment
+# CONFIGURATION - Read from environment variables or defaults
 # ============================================================================
 
-EC2_IP = "18.208.117.82"
-EC2_USER = "ec2-user"
-SSH_KEY_PATH = r'C:\Users\tcham\Downloads\test-rag.pem'
-GIT_REPO = "https://github.com/tchamna/resulam_royalties.git"  # Change this for other repos
-APP_PORT = 8050
-APP_DIR = "/home/ec2-user/apps/resulam-royalties"
-S3_BUCKET = "resulam-royalties"
-AWS_REGION = "us-east-1"
-DOMAIN_NAME = "resulam-royalties.tchamna.com"
+def get_env(key, default=None, required=False):
+    """Get environment variable with optional default and validation"""
+    value = os.getenv(key, default)
+    if required and not value:
+        print(f"❌ ERROR: Required environment variable '{key}' not set")
+        print(f"   Set it with: export {key}=value")
+        sys.exit(1)
+    return value
 
-# Optional: S3 data files to download (leave empty list to skip S3 download)
-# If your project doesnt need S3 data files, set S3_DATA_FILES to None and S3_DATA_FILES to []
-S3_DATA_FILES = [
-    "Resulam_books_database_Amazon_base_de_donnee_livres.csv",
-    f"KDP_OrdersResulamBookSales2015_{datetime.now().year}RoyaltiesReportsHistory.xlsx"
-]
+# Support both GitHub Secrets naming (EC2_HOST, EC2_SSH_KEY) and custom naming (EC2_IP, SSH_KEY_PATH)
+EC2_IP = get_env("EC2_IP") or get_env("EC2_HOST")
+EC2_USER = get_env("EC2_USER")
+SSH_KEY_PATH = get_env("SSH_KEY_PATH") or get_env("EC2_SSH_KEY")
+GIT_REPO = get_env("GIT_REPO")
+APP_PORT = int(get_env("APP_PORT") or "8050")
+APP_DIR = get_env("APP_DIR")
+S3_BUCKET = get_env("S3_BUCKET")
+AWS_REGION = get_env("AWS_REGION") or "us-east-1"
+DOMAIN_NAME = get_env("DOMAIN_NAME")
+AWS_ACCESS_KEY_ID = get_env("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = get_env("AWS_SECRET_ACCESS_KEY")
 
-# Optional: Python packages - read from requirements.txt if it exists
-# If requirements.txt exists in the repo, it will be used automatically
-# Leave this empty list to use only requirements.txt
-PYTHON_PACKAGES = []
+# Optional: S3 data files to download (pipe-separated)
+# Can be set via: export S3_DATA_FILES="file1.csv|file2.xlsx"
+S3_DATA_FILES_ENV = get_env("S3_DATA_FILES", "")
+if S3_DATA_FILES_ENV:
+    S3_DATA_FILES = S3_DATA_FILES_ENV.split("|")
+else:
+    S3_DATA_FILES = []
+
+# Optional: Python packages (pipe-separated, or leave empty to use requirements.txt)
+# Can be set via: export PYTHON_PACKAGES="package1==1.0|package2==2.0"
+PYTHON_PACKAGES_ENV = get_env("PYTHON_PACKAGES", "")
+if PYTHON_PACKAGES_ENV:
+    PYTHON_PACKAGES = PYTHON_PACKAGES_ENV.split("|")
+else:
+    PYTHON_PACKAGES = []
 
 # ============================================================================
 # DERIVED CONFIGURATION
@@ -58,6 +74,35 @@ CURRENT_YEAR = datetime.now().year
 APP_NAME = os.path.basename(urlparse(GIT_REPO).path).replace(".git", "")
 SYSTEMD_SERVICE = f"{APP_NAME}.service"
 NGINX_CONFIG = f"/etc/nginx/conf.d/{APP_NAME}.conf"
+
+def print_config():
+    """Display configuration with sources"""
+    print("\n" + "="*70)
+    print("DEPLOYMENT CONFIGURATION")
+    print("="*70)
+    print(f"\n📋 Configuration Sources:")
+    print(f"   • Environment variables (if set)")
+    print(f"   • Local defaults (fallback)")
+    print(f"\n🔧 Active Configuration:")
+    print(f"   EC2_IP:              {EC2_IP}")
+    print(f"   EC2_USER:            {EC2_USER}")
+    print(f"   SSH_KEY_PATH:        {SSH_KEY_PATH}")
+    print(f"   GIT_REPO:            {GIT_REPO}")
+    print(f"   APP_NAME:            {APP_NAME}")
+    print(f"   APP_PORT:            {APP_PORT}")
+    print(f"   APP_DIR:             {APP_DIR}")
+    print(f"   DOMAIN_NAME:         {DOMAIN_NAME}")
+    print(f"   S3_BUCKET:           {S3_BUCKET}")
+    print(f"   AWS_REGION:          {AWS_REGION}")
+    if S3_DATA_FILES:
+        print(f"   S3_DATA_FILES:       {', '.join(S3_DATA_FILES)}")
+    else:
+        print(f"   S3_DATA_FILES:       (none, will skip S3 download)")
+    if PYTHON_PACKAGES:
+        print(f"   PYTHON_PACKAGES:     {', '.join(PYTHON_PACKAGES[:2])}...")
+    else:
+        print(f"   PYTHON_PACKAGES:     (will use requirements.txt)")
+    print("\n" + "="*70 + "\n")
 
 def ssh(cmd):
     """Execute command on EC2 via SSH"""
@@ -143,8 +188,9 @@ def configure_https():
 
 def deploy():
     print("\n" + "="*60)
-    print("RESULAM ROYALTIES - EC2 DEPLOYMENT")
-    print("="*60 + "\n")
+    print("UNIVERSAL EC2 DEPLOYMENT")
+    print("="*60)
+    print_config()
     
     # Step 0: Configure AWS Security Group
     print("Step 0: Configuring AWS security group...")
@@ -418,8 +464,106 @@ server {{
     
     return True
 
+def setup_github_secrets():
+    """Setup GitHub repository secrets from environment variables"""
+    try:
+        # Check if gh CLI is available
+        result = subprocess.run(['gh', '--version'], capture_output=True, text=True)
+        if result.returncode != 0:
+            print("❌ GitHub CLI (gh) not installed. Install from: https://cli.github.com")
+            return False
+        
+        # Get repository info
+        result = subprocess.run(['git', 'config', '--get', 'remote.origin.url'], 
+                                capture_output=True, text=True, cwd='.')
+        if result.returncode != 0:
+            print("❌ Not in a git repository")
+            return False
+        
+        repo_url = result.stdout.strip()
+        # Extract owner/repo from URL
+        if 'github.com' not in repo_url:
+            print("❌ Not a GitHub repository")
+            return False
+        
+        repo = repo_url.split('/')[-1].replace('.git', '')
+        owner = repo_url.split('/')[-2]
+        full_repo = f"{owner}/{repo}"
+        
+        print(f"\n🔐 Setting up GitHub Secrets for: {full_repo}")
+        print("=" * 70)
+        
+        # Map environment variables to GitHub secrets
+        secrets_map = {
+            "EC2_HOST": EC2_IP,
+            "EC2_USER": EC2_USER,
+            "AWS_ACCESS_KEY_ID": AWS_ACCESS_KEY_ID,
+            "AWS_SECRET_ACCESS_KEY": AWS_SECRET_ACCESS_KEY,
+            "DOMAIN_NAME": DOMAIN_NAME,
+            "S3_BUCKET": S3_BUCKET,
+            "APP_DIR": APP_DIR,
+            "AWS_DEFAULT_REGION": AWS_REGION,
+        }
+        
+        # Handle EC2_SSH_KEY - load from file if path provided
+        if SSH_KEY_PATH and os.path.exists(SSH_KEY_PATH):
+            try:
+                with open(SSH_KEY_PATH, 'r') as f:
+                    secrets_map["EC2_SSH_KEY"] = f.read()
+            except Exception as e:
+                print(f"⚠️  Could not read SSH key from {SSH_KEY_PATH}: {e}")
+                secrets_map["EC2_SSH_KEY"] = SSH_KEY_PATH
+        else:
+            secrets_map["EC2_SSH_KEY"] = SSH_KEY_PATH
+        
+        success_count = 0
+        fail_count = 0
+        
+        for secret_name, secret_value in secrets_map.items():
+            if not secret_value:
+                print(f"⏭️  Skipping {secret_name} (empty)")
+                continue
+            
+            # Set secret using gh CLI
+            try:
+                # Use echo with pipe to set secret
+                process = subprocess.Popen(['gh', 'secret', 'set', secret_name, 
+                                           '--repo', full_repo],
+                                          stdin=subprocess.PIPE, 
+                                          stdout=subprocess.PIPE,
+                                          stderr=subprocess.PIPE,
+                                          text=True)
+                stdout, stderr = process.communicate(input=str(secret_value))
+                
+                if process.returncode == 0:
+                    print(f"✅ {secret_name}")
+                    success_count += 1
+                else:
+                    print(f"❌ {secret_name}: {stderr.strip()}")
+                    fail_count += 1
+            except Exception as e:
+                print(f"❌ {secret_name}: {e}")
+                fail_count += 1
+        
+        print("\n" + "=" * 70)
+        print(f"✅ GitHub Secrets Setup Complete")
+        print(f"   Successful: {success_count}")
+        print(f"   Failed: {fail_count}")
+        print(f"\n📋 To verify, run: gh secret list --repo {full_repo}")
+        
+        return fail_count == 0
+        
+    except Exception as e:
+        print(f"❌ Error setting up GitHub secrets: {e}")
+        return False
+
 if __name__ == '__main__':
     try:
+        # Check for --setup-secrets flag
+        if '--setup-secrets' in sys.argv:
+            success = setup_github_secrets()
+            sys.exit(0 if success else 1)
+        
         success = deploy()
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:
