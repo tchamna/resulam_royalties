@@ -24,20 +24,34 @@ MAIN_DIR = r"G:\My Drive\Mbú'ŋwɑ̀'nì\RoyaltiesResulam"
 LOCAL_BOOKS_DATABASE_PATH = Path(MAIN_DIR) / "Resulam_books_database_Amazon_base_de_donnee_livres.csv"
 LOCAL_ROYALTIES_HISTORY_PATH = Path(MAIN_DIR) / f"KDP_OrdersResulamBookSales2015_{CURRENT_YEAR}RoyaltiesReportsHistory.xlsx"
 
-# When USE_S3_DATA is true, try to use local downloaded S3 files
-# Otherwise use Google Drive paths
+# EC2 paths - data downloaded from S3
 DATA_DIR_LOCAL = PROJECT_ROOT / "data"
 EC2_BOOKS_DATABASE_PATH = DATA_DIR_LOCAL / "Resulam_books_database_Amazon_base_de_donnee_livres.csv"
-EC2_ROYALTIES_HISTORY_PATH = DATA_DIR_LOCAL / "KDP_OrdersResulamBookSales2015_2025RoyaltiesReportsHistory.xlsx"
+EC2_ROYALTIES_HISTORY_PATH = DATA_DIR_LOCAL / f"KDP_OrdersResulamBookSales2015_{CURRENT_YEAR}RoyaltiesReportsHistory.xlsx"
 
-if _USE_S3:
-    # On EC2, prefer downloaded S3 files, fall back to local paths
-    BOOKS_DATABASE_PATH = EC2_BOOKS_DATABASE_PATH if EC2_BOOKS_DATABASE_PATH.exists() else LOCAL_BOOKS_DATABASE_PATH
-    ROYALTIES_HISTORY_PATH = EC2_ROYALTIES_HISTORY_PATH if EC2_ROYALTIES_HISTORY_PATH.exists() else LOCAL_ROYALTIES_HISTORY_PATH
-else:
-    # Use local paths as fallback
-    BOOKS_DATABASE_PATH = LOCAL_BOOKS_DATABASE_PATH
-    ROYALTIES_HISTORY_PATH = LOCAL_ROYALTIES_HISTORY_PATH
+# Determine which paths to use - prioritize S3-downloaded files, fallback to local
+def _get_data_paths():
+    """Resolve data paths based on environment and file availability."""
+    # Check if we're on EC2 with S3 data
+    if _USE_S3:
+        # Try EC2 S3 downloaded paths first
+        if EC2_BOOKS_DATABASE_PATH.exists():
+            books_path = EC2_BOOKS_DATABASE_PATH
+        else:
+            books_path = LOCAL_BOOKS_DATABASE_PATH
+        
+        if EC2_ROYALTIES_HISTORY_PATH.exists():
+            royalties_path = EC2_ROYALTIES_HISTORY_PATH
+        else:
+            royalties_path = LOCAL_ROYALTIES_HISTORY_PATH
+    else:
+        # Local development - use Google Drive paths
+        books_path = LOCAL_BOOKS_DATABASE_PATH
+        royalties_path = LOCAL_ROYALTIES_HISTORY_PATH
+    
+    return books_path, royalties_path
+
+BOOKS_DATABASE_PATH, ROYALTIES_HISTORY_PATH = _get_data_paths()
 
 # Author name normalization mapping
 AUTHOR_NORMALIZATION = {

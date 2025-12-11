@@ -7,6 +7,7 @@ Single command deployment with all configs, PYTHONPATH handling, and S3 data fil
 import subprocess
 import sys
 import os
+from datetime import datetime
 
 EC2_IP = "18.208.117.82"
 EC2_USER = "ec2-user"
@@ -15,6 +16,7 @@ APP_PORT = 8050
 APP_DIR = "/home/ec2-user/apps/resulam-royalties"
 S3_BUCKET = "resulam-royalties"
 AWS_REGION = "us-east-1"
+CURRENT_YEAR = datetime.now().year
 
 def ssh(cmd):
     """Execute command on EC2 via SSH"""
@@ -67,7 +69,7 @@ def deploy():
            f"s3 = boto3.client('s3', region_name='{AWS_REGION}')\n"
            f"files_to_download = [\n"
            f"    ('Resulam_books_database_Amazon_base_de_donnee_livres.csv', 'data/Resulam_books_database_Amazon_base_de_donnee_livres.csv'),\n"
-           f"    ('KDP_OrdersResulamBookSales2015_2025RoyaltiesReportsHistory.xlsx', 'data/KDP_OrdersResulamBookSales2015_2025RoyaltiesReportsHistory.xlsx')\n"
+           f"    ('KDP_OrdersResulamBookSales2015_{CURRENT_YEAR}RoyaltiesReportsHistory.xlsx', 'data/KDP_OrdersResulamBookSales2015_{CURRENT_YEAR}RoyaltiesReportsHistory.xlsx')\n"
            f"]\n"
            f"for src, dst in files_to_download:\n"
            f"    try:\n"
