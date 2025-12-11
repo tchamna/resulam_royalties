@@ -65,6 +65,28 @@ jobs:
           # Run the universal deploy script
           python deploy.py
 
+      - name: Check application logs
+        if: always()
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
+          APP_DIR: ${{ secrets.APP_DIR || '/home/ec2-user/apps/resulam-royalties' }}
+        run: |
+          echo "📋 Checking application status and logs..."
+          ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST << 'EOF'
+            echo "=== Service Status ==="
+            sudo systemctl status resulam-royalties --no-pager || true
+            
+            echo -e "\n=== Last 30 lines of application log ==="
+            sudo journalctl -u resulam-royalties -n 30 --no-pager || true
+            
+            echo -e "\n=== Checking if port 8050 is listening ==="
+            sudo netstat -tlnp | grep 8050 || echo "Port 8050 not listening"
+            
+            echo -e "\n=== Recent Python errors ==="
+            sudo journalctl -u resulam-royalties --since "5 minutes ago" | grep -i "error\|exception\|traceback" || echo "No recent errors found"
+          EOF
+
       - name: Verify deployment
         env:
           DOMAIN_NAME: ${{ secrets.DOMAIN_NAME || 'resulam-royalties.tchamna.com' }}
@@ -84,6 +106,7 @@ jobs:
           done
           
           echo "❌ Application health check failed!"
+          echo "Check the 'Check application logs' step above for details"
           exit 1
 
       - name: Notify deployment

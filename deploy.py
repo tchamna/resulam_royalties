@@ -313,6 +313,9 @@ Environment="PYTHONPATH={app_dir}"
 Environment="USE_S3_DATA=true"
 Environment="S3_BUCKET={s3_bucket}"
 Environment="AWS_DEFAULT_REGION={aws_region}"
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier={app_name}
 ExecStart={app_dir}/venv/bin/python main.py --host 127.0.0.1 --port 8051
 Restart=always
 RestartSec=10
