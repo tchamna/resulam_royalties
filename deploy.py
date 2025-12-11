@@ -58,9 +58,12 @@ def deploy():
     # Step 3: Download data files from S3
     print("\nStep 3: Downloading data files from S3...")
     cmd = (f"cd {APP_DIR} && "
+           f"mkdir -p data && "
            f"pip install -q boto3 && "
            f"python3 << 'ENDS3'\n"
            f"import boto3\n"
+           f"import os\n"
+           f"os.makedirs('data', exist_ok=True)\n"
            f"s3 = boto3.client('s3', region_name='{AWS_REGION}')\n"
            f"files_to_download = [\n"
            f"    ('Resulam_books_database_Amazon_base_de_donnee_livres.csv', 'data/Resulam_books_database_Amazon_base_de_donnee_livres.csv'),\n"
@@ -69,7 +72,7 @@ def deploy():
            f"for src, dst in files_to_download:\n"
            f"    try:\n"
            f"        s3.download_file('{S3_BUCKET}', src, dst)\n"
-           f"        print(f'Downloaded {{src}}')\n"
+           f"        print(f'Downloaded {{src}} to {{dst}}')\n"
            f"    except Exception as e:\n"
            f"        print(f'Warning: Could not download {{src}}: {{e}}')\n"
            f"ENDS3")

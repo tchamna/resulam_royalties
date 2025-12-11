@@ -24,10 +24,16 @@ MAIN_DIR = r"G:\My Drive\Mbú'ŋwɑ̀'nì\RoyaltiesResulam"
 LOCAL_BOOKS_DATABASE_PATH = Path(MAIN_DIR) / "Resulam_books_database_Amazon_base_de_donnee_livres.csv"
 LOCAL_ROYALTIES_HISTORY_PATH = Path(MAIN_DIR) / f"KDP_OrdersResulamBookSales2015_{CURRENT_YEAR}RoyaltiesReportsHistory.xlsx"
 
+# When USE_S3_DATA is true, try to use local downloaded S3 files
+# Otherwise use Google Drive paths
+DATA_DIR_LOCAL = PROJECT_ROOT / "data"
+EC2_BOOKS_DATABASE_PATH = DATA_DIR_LOCAL / "Resulam_books_database_Amazon_base_de_donnee_livres.csv"
+EC2_ROYALTIES_HISTORY_PATH = DATA_DIR_LOCAL / "KDP_OrdersResulamBookSales2015_2025RoyaltiesReportsHistory.xlsx"
+
 if _USE_S3:
-    # S3 paths (for production on EC2)
-    BOOKS_DATABASE_PATH = "s3://resulam-royalties/Resulam_books_database_Amazon_base_de_donnee_livres.csv"
-    ROYALTIES_HISTORY_PATH = "s3://resulam-royalties/KDP_OrdersResulamBookSales2015_2025RoyaltiesReportsHistory.xlsx"
+    # On EC2, prefer downloaded S3 files, fall back to local paths
+    BOOKS_DATABASE_PATH = EC2_BOOKS_DATABASE_PATH if EC2_BOOKS_DATABASE_PATH.exists() else LOCAL_BOOKS_DATABASE_PATH
+    ROYALTIES_HISTORY_PATH = EC2_ROYALTIES_HISTORY_PATH if EC2_ROYALTIES_HISTORY_PATH.exists() else LOCAL_ROYALTIES_HISTORY_PATH
 else:
     # Use local paths as fallback
     BOOKS_DATABASE_PATH = LOCAL_BOOKS_DATABASE_PATH
