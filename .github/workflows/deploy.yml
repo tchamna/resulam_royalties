@@ -1,0 +1,159 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
+
+      - name: Create SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2-key.pem
+          chmod 600 ~/.ssh/ec2-key.pem
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Deploy to EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ec2-user
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: |
+          cat > /tmp/deploy-remote.sh << 'EOF'
+          #!/bin/bash
+          set -e
+          
+          APP_DIR="/home/$EC2_USER/resulam-royalties"
+          VENV_DIR="$APP_DIR/venv"
+          
+          echo "🚀 Starting EC2 deployment..."
+          
+          # Update repository
+          echo "📥 Updating repository..."
+          cd "$APP_DIR"
+          git fetch origin
+          git reset --hard origin/main
+          
+          # Update dependencies
+          echo "📚 Updating dependencies..."
+          source "$VENV_DIR/bin/activate"
+          pip install --upgrade -r requirements.txt -q
+          
+          # Restart service
+          echo "🔄 Restarting application..."
+          sudo systemctl restart resulam-royalties
+          
+          # Verify service
+          sleep 3
+          if sudo systemctl is-active --quiet resulam-royalties; then
+              echo "✅ Deployment successful!"
+              echo "Dashboard: http://$EC2_HOST"
+          else
+              echo "❌ Deployment failed!"
+              sudo journalctl -u resulam-royalties -n 50
+              exit 1
+          fi
+          EOF
+          
+          chmod +x /tmp/deploy-remote.sh
+          ssh -i ~/.ssh/ec2-key.pem ec2-user@${{ secrets.EC2_HOST }} \
+            "bash -s < /tmp/deploy-remote.sh"
+
+      - name: Verify deployment
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          echo "✅ Verifying application health..."
+          max_attempts=10
+          for i in $(seq 1 $max_attempts); do
+            if curl -sf http://${{ secrets.EC2_HOST }}/ > /dev/null 2>&1; then
+              echo "✅ Application is responding!"
+              exit 0
+            fi
+            echo "Attempt $i/$max_attempts: Waiting for application to start..."
+            sleep 5
+          done
+          
+          echo "❌ Application health check failed!"
+          exit 1
+
+      - name: Notify deployment
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = '${{ job.status }}' === 'success' ? '✅ Success' : '❌ Failed';
+            const deployment = `
+            **Deployment Status:** ${status}
+            
+            - **Commit:** ${{ github.sha }}
+            - **Branch:** ${{ github.ref_name }}
+            - **Author:** ${{ github.actor }}
+            - **EC2:** ${{ secrets.EC2_HOST }}
+            - **Time:** ${new Date().toUTCString()}
+            `;
+            
+            // Log to workflow summary
+            core.notice(deployment);
+
+  rollback:
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: failure()
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Create SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2-key.pem
+          chmod 600 ~/.ssh/ec2-key.pem
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Rollback deployment
+        if: github.event_name == 'push'
+        run: |
+          echo "⏮️  Rolling back to previous version..."
+          ssh -i ~/.ssh/ec2-key.pem ec2-user@${{ secrets.EC2_HOST }} << 'EOF'
+          APP_DIR="/home/ec2-user/resulam-royalties"
+          cd "$APP_DIR"
+          git reset --hard HEAD~1
+          sudo systemctl restart resulam-royalties
+          sleep 3
+          if sudo systemctl is-active --quiet resulam-royalties; then
+            echo "✅ Rollback successful!"
+          else
+            echo "❌ Rollback failed!"
+            exit 1
+          fi
+          EOF

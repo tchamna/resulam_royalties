@@ -125,7 +125,7 @@ dmypy.json
 .pyre/
 
 # Project specific
-data/
+/data/
 *.csv
 *.xlsx
 *.xls
