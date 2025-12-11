@@ -34,22 +34,11 @@ def _get_data_paths():
     """Resolve data paths based on environment and file availability."""
     # Check if we're on EC2 with S3 data
     if _USE_S3:
-        # Try EC2 S3 downloaded paths first
-        if EC2_BOOKS_DATABASE_PATH.exists():
-            books_path = EC2_BOOKS_DATABASE_PATH
-        else:
-            books_path = LOCAL_BOOKS_DATABASE_PATH
-        
-        if EC2_ROYALTIES_HISTORY_PATH.exists():
-            royalties_path = EC2_ROYALTIES_HISTORY_PATH
-        else:
-            royalties_path = LOCAL_ROYALTIES_HISTORY_PATH
+        # On EC2, always use the downloaded S3 paths (they should exist after deployment)
+        return EC2_BOOKS_DATABASE_PATH, EC2_ROYALTIES_HISTORY_PATH
     else:
         # Local development - use Google Drive paths
-        books_path = LOCAL_BOOKS_DATABASE_PATH
-        royalties_path = LOCAL_ROYALTIES_HISTORY_PATH
-    
-    return books_path, royalties_path
+        return LOCAL_BOOKS_DATABASE_PATH, LOCAL_ROYALTIES_HISTORY_PATH
 
 BOOKS_DATABASE_PATH, ROYALTIES_HISTORY_PATH = _get_data_paths()
 
