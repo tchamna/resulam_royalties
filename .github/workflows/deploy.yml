@@ -68,11 +68,9 @@ jobs:
             rm -f royalties_exploded_2024.csv royalties_per_author_2024.csv royalties_resulambooks_from_2015_2024_history_df.csv || true
             
             # Reset any merge conflicts and force clean state
-            git reset --hard HEAD || true
+            git fetch origin main
+            git reset --hard origin/main
             git clean -fd || true
-            
-            # Pull latest code
-            git pull origin main
             
             # Ensure AWS credentials are configured for S3 access
             mkdir -p ~/.aws
