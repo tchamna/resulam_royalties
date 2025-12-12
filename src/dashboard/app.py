@@ -2286,14 +2286,16 @@ class ResulamDashboard:
         # Determine if we're using S3 (online) or local assets
         import os
         use_s3_images = os.getenv('USE_S3_DATA', 'false').lower() == 'true'
+        s3_base_url = "https://resulam-images.s3.amazonaws.com/ResulamBookCoversQRCode_Compressed"
         
         # Build a mapping of book covers (book_id -> image_url)
         available_covers = {}
         
         if use_s3_images:
-            # Online version - use pre-signed URLs for S3 images (bucket is not public)
+            # Online version - use public S3 URLs
             try:
                 import boto3
+                from urllib.parse import quote
                 s3 = boto3.client('s3')
                 bucket_name = 'resulam-images'
                 prefix = 'ResulamBookCoversQRCode_Compressed/Book'
@@ -2310,13 +2312,8 @@ class ResulamDashboard:
                             num_str = parts[0].strip('_')
                             if num_str.isdigit():
                                 book_num = int(num_str)
-                                # Generate pre-signed URL (valid for 1 hour)
-                                presigned_url = s3.generate_presigned_url(
-                                    'get_object',
-                                    Params={'Bucket': bucket_name, 'Key': key},
-                                    ExpiresIn=3600  # 1 hour
-                                )
-                                available_covers[book_num] = presigned_url
+                                # Use public URL (bucket policy allows public read)
+                                available_covers[book_num] = f"{s3_base_url}/{quote(filename)}"
             except Exception as e:
                 print(f"Warning: Could not fetch S3 cover list: {e}")
         else:
