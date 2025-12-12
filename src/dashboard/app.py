@@ -2286,20 +2286,19 @@ class ResulamDashboard:
         # Determine if we're using S3 (online) or local assets
         import os
         use_s3_images = os.getenv('USE_S3_DATA', 'false').lower() == 'true'
-        s3_base_url = "https://resulam-images.s3.amazonaws.com/ResulamBookCoversQRCode_Compressed"
         
         # Build a mapping of book covers (book_id -> image_url)
         available_covers = {}
         
         if use_s3_images:
-            # Online version - fetch list of available covers from S3
+            # Online version - use pre-signed URLs for S3 images (bucket is not public)
             try:
                 import boto3
                 s3 = boto3.client('s3')
-                resp = s3.list_objects_v2(
-                    Bucket='resulam-images', 
-                    Prefix='ResulamBookCoversQRCode_Compressed/Book'
-                )
+                bucket_name = 'resulam-images'
+                prefix = 'ResulamBookCoversQRCode_Compressed/Book'
+                
+                resp = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
                 for obj in resp.get('Contents', []):
                     key = obj['Key']
                     filename = key.split('/')[-1]  # e.g., "Book1__nufi_contes....PNG"
@@ -2311,9 +2310,13 @@ class ResulamDashboard:
                             num_str = parts[0].strip('_')
                             if num_str.isdigit():
                                 book_num = int(num_str)
-                                # Use the exact S3 key for the URL
-                                from urllib.parse import quote
-                                available_covers[book_num] = f"{s3_base_url}/{quote(filename, safe='')}"
+                                # Generate pre-signed URL (valid for 1 hour)
+                                presigned_url = s3.generate_presigned_url(
+                                    'get_object',
+                                    Params={'Bucket': bucket_name, 'Key': key},
+                                    ExpiresIn=3600  # 1 hour
+                                )
+                                available_covers[book_num] = presigned_url
             except Exception as e:
                 print(f"Warning: Could not fetch S3 cover list: {e}")
         else:
