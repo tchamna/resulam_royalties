@@ -98,3 +98,71 @@ HARDCODED_TITLE_NICKNAMES = {
     "Zulu - French - English Phrasebook: Guide de conversation trilingue IsiZulu – Français - Anglais": "zulu_phrasebook",
     "Étude Comparative des Variantes Dialectales de L'unique Langue Bamiléké Part I: Comparative Study of the Bamileke dialects Part I": "bamileke_étude_comparative",
 }
+
+# Mapping from database book_nick_name to royalty book_nick_name(s)
+# This bridges the gap between long descriptive DB nicknames and short royalty nicknames
+DB_NICKNAME_TO_ROYALTY = {
+    # Phrasebooks
+    "nufi_phrasebook_guide_conversation_trilingue": ["nufi_phrasebook", "nufi_phrasebook_v2"],
+    "ewondo_phrasebook_guide_conversation_trilingue": ["ewondo_phrasebook"],
+    "duala_phrasebook_guide_conversation_trilingue": ["duala_phrasebook", "duala_phrasebook_v2"],
+    "medumba_phrasebook_guide_conversation_trilingue": ["medumba_phrasebook", "medumba_phrasebook_v2"],
+    "yemba_phrasebook_guide_conversation_trilingue": ["yemba_phrasebook", "yemba_phrasebook_updated"],
+    "wolof_phrasebook_guide_conversation_trilingue": ["wolof_phrasebook"],
+    "swahili_phrasebook_guide_conversation_trilingue": ["swahili_phrasebook"],
+    "shupamom_phrasebook_guide_conversation_trilingue": ["shupamom_phrasebook"],
+    "ewe_phrasebook_guide_conversation_trilingue": ["ewe_phrasebook"],
+    "hausa_phrasebook_guide_conversation_trilingue": ["hausa_phrasebook"],
+    "yoruba_phrasebook_guide_conversation_trilingue": ["yoruba_phrasebook"],
+    "lingala_phrasebook_guide_conversation_trilingue": ["lingala_phrasebook"],
+    "tshiluba_phrasebook_guide_conversation_trilingue": ["tshiluba_phrasebook"],
+    "igbo_phrasebook_guide_conversation_trilingue": ["igbo_phrasebook"],
+    "kinyarwanda_phrasebook_guide_conversation_trilingue": ["kinyarwanda_phrasebook"],
+    "basaa_phrasebook_guide_conversation_trilingue": ["basaa_phrasebook"],
+    "chichewa_phrasebook_guide_conversation_trilingue": ["chichewa_phrasebook"],
+    "ghomala_phrasebook_guide_conversation_trilingue": ["ghomala_phrasebook"],
+    "zulu_phrasebook_guide_conversation_trilingue": ["zulu_phrasebook"],
+    "twi_phrasebook_guide_conversation_trilingue": ["twi_phrasebook"],
+    "kikongo-kituba_phrasebook_guide_conversation_trilingue": ["kikongo_phrasebook"],
+    "fulfulde-nigeria-cameroun_phrasebook_guide_conversation_trilingue": ["fulfulde_phrasebook", "fulfulde_phrasebook_v2"],
+    "fulfulde-benin-niger-mali_phrasebook_guide_conversation_trilingue": ["fulfulde_phrasebook", "fulfulde_phrasebook_v2"],
+    
+    # Attic / Grenier books
+    "nufi_attic_grenier": ["nufi_attic", "nufi_attic_kam"],
+    "ngemba_attic_grenier": ["ngemba_attic"],
+    "yemba_attic_grenier": ["yemba_attic"],
+    "medumba_attic_grenier": ["medumba_attic"],
+    "ghomala_attic_grenier": ["ghomala_attic"],
+    "basaa_attic_grenier": ["basaa_attic"],
+    "duala_attic_grenier": ["duala_attic"],
+    "ewondo_attic_grenier": ["ewondo_attic"],
+    "wolof_attic_grenier": ["wolof_attic"],
+    "hausa_attic_grenier": ["hausa_attic"],
+    "yoruba_attic_grenier": ["yoruba_attic"],
+    "igbo_attic_grenier": ["igbo_attic"],
+    "tshiluba_attic_grenier": ["tshiluba_attic"],
+    "shupamom_attic_grenier": ["shupamom_attic"],
+    "kiswahili_attic_grenier": ["kiswahili_attic"],
+    "fulfulde_attic_grenier": ["fulfulde_attic"],
+    
+    # Fairy Tales - Contes
+    "english-french_african_tales_bamiléké_fairy_tales": ["english-french_african_tales"],
+    "english-french_bamilekes_fairy_work_value": ["english-french_bamilekes_fairy_tales"],
+    "nufi_contes_africains_contes_bamilekés_hard_cover": ["nufi_contes_bamilekés_couleur", "nufi_contes_bamilekés_black_white", "nufi_contes_bamilekés_RETIRED"],
+    "nufi_travaille_paresse": ["nufi_conte_travaille_paresse"],
+    "medumba_travaille_paresse": ["medumba_conte_travaille_paresse"],
+    "yemba_travaille_paresse": ["yemba_conte_travaille_paresse"],
+    "wolof_travaille_paresse": ["wolof_conte_travaille_paresse"],
+    "kikongo_travaille_paresse": ["kikongo_conte_travaille_paresse"],
+    "swahili_travaille_paresse": ["swahili_conte_travaille_paresse"],
+    "ngiemboon_travaille_paresse": ["ngiemboon_conte_travaille_paresse"],
+    
+    # Comparative study
+    "bamileke_étude_comparative_mulb": ["bamileke_étude_comparative"],
+    
+    # Names
+    "mon_prénom_africain_mon_prénom_bamiléké": ["prénom_africain_bamiléké"],
+    
+    # Conversation de base (ewondo special case)
+    "ewondo_conversation_de_base": ["Conversations de base en langue ewondo"],
+}

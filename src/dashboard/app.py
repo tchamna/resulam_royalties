@@ -319,24 +319,32 @@ class ResulamDashboard:
         # Get unique book nicknames for book filter
         all_book_nicknames = sorted(self.royalties['book_nick_name'].dropna().unique().tolist())
         
+        # Get unique categories from books database for category filter
+        try:
+            books_df = pd.read_csv(BOOKS_DATABASE_PATH)
+            all_categories = sorted(books_df['category'].dropna().unique().tolist())
+        except Exception:
+            all_categories = []
+        
         filter_section = dbc.Container([
+            # First row: Year, Language, Author
             dbc.Row([
                 dbc.Col([
-                    dbc.Label("Filter by Year:", className="fw-bold"),
+                    dbc.Label("Year:", className="fw-bold text-light mb-1", style={"fontSize": "0.85rem"}),
                     dcc.Dropdown(
                         id="year-filter",
                         options=[{"label": "Life time", "value": "lifetime"}] + 
                                 [{"label": str(year), "value": year} for year in years_reversed],
-                        value=CURRENT_YEAR,  # Default to current year
+                        value=CURRENT_YEAR,
                         multi=False,
                         searchable=True,
                         clearable=False,
                         style={"width": "100%"}
                     ),
-                    dcc.Store(id="year-filter-store", data=[CURRENT_YEAR])  # Store current year by default
-                ], md=2),
+                    dcc.Store(id="year-filter-store", data=[CURRENT_YEAR])
+                ], md=2, sm=4, xs=6),
                 dbc.Col([
-                    dbc.Label("Filter by Language:", className="fw-bold"),
+                    dbc.Label("Language:", className="fw-bold text-light mb-1", style={"fontSize": "0.85rem"}),
                     dcc.Dropdown(
                         id="language-filter",
                         options=[{"label": "All Languages", "value": "all"}] + [
@@ -348,9 +356,9 @@ class ResulamDashboard:
                         clearable=False,
                         style={"width": "100%"}
                     )
-                ], md=2),
+                ], md=2, sm=4, xs=6),
                 dbc.Col([
-                    dbc.Label("Filter by Author:", className="fw-bold"),
+                    dbc.Label("Author:", className="fw-bold text-light mb-1", style={"fontSize": "0.85rem"}),
                     dcc.Dropdown(
                         id="author-filter",
                         options=[{"label": "All Authors", "value": "all"}] + [
@@ -362,9 +370,9 @@ class ResulamDashboard:
                         clearable=False,
                         style={"width": "100%"}
                     )
-                ], md=2),
+                ], md=2, sm=4, xs=6),
                 dbc.Col([
-                    dbc.Label("Filter by Book Type:", className="fw-bold"),
+                    dbc.Label("Type:", className="fw-bold text-light mb-1", style={"fontSize": "0.85rem"}),
                     dcc.Dropdown(
                         id="booktype-filter",
                         options=[{"label": "All Types", "value": "all"}] + [
@@ -376,9 +384,9 @@ class ResulamDashboard:
                         clearable=False,
                         style={"width": "100%"}
                     )
-                ], md=2),
+                ], md=2, sm=4, xs=6),
                 dbc.Col([
-                    dbc.Label("Filter by Book:", className="fw-bold"),
+                    dbc.Label("Book:", className="fw-bold text-light mb-1", style={"fontSize": "0.85rem"}),
                     dcc.Dropdown(
                         id="book-filter",
                         options=[{"label": "All Books", "value": "all"}] + [
@@ -389,22 +397,38 @@ class ResulamDashboard:
                         searchable=True,
                         clearable=False,
                         style={"width": "100%"},
-                        placeholder="Search for a book..."
+                        placeholder="Search..."
                     )
-                ], md=3),
+                ], md=2, sm=4, xs=6),
                 dbc.Col([
-                    html.Div([
-                        dbc.Button(
-                            "🔄 Reset",
-                            id="reset-all-filters",
-                            color="danger",
-                            className="w-100",
-                            style={"fontWeight": "bold", "fontSize": "14px"}
-                        )
-                    ], style={"marginTop": "32px"})  # Align with dropdowns by adding top margin
-                ], md=1)
-            ], className="mb-3")
-        ], fluid=True, className="py-3 mb-4")
+                    dbc.Label("Category:", className="fw-bold text-light mb-1", style={"fontSize": "0.85rem"}),
+                    dcc.Dropdown(
+                        id="category-filter",
+                        options=[{"label": "All Categories", "value": "all"}] + [
+                            {"label": cat, "value": cat} for cat in all_categories
+                        ],
+                        value="all",
+                        multi=False,
+                        searchable=True,
+                        clearable=False,
+                        style={"width": "100%"},
+                        placeholder="Select..."
+                    )
+                ], md=2, sm=4, xs=6),
+            ], className="g-2 align-items-end mb-2"),
+            # Second row: Reset button centered
+            dbc.Row([
+                dbc.Col([
+                    dbc.Button(
+                        "🔄 Reset All Filters",
+                        id="reset-all-filters",
+                        color="danger",
+                        className="w-100",
+                        style={"fontWeight": "bold", "fontSize": "0.85rem"}
+                    )
+                ], md={"size": 2, "offset": 5}, sm={"size": 4, "offset": 4}, xs={"size": 6, "offset": 3})
+            ], className="g-2")
+        ], fluid=True, className="py-2 mb-3")
         
         # Summary metrics cards (now dynamic based on filter)
         # Common card style for consistent sizing
@@ -796,12 +820,13 @@ class ResulamDashboard:
             Output("author-filter", "value"),
             Output("booktype-filter", "value"),
             Output("book-filter", "value"),
+            Output("category-filter", "value"),
             Input("reset-all-filters", "n_clicks"),
             prevent_initial_call=True
         )
         def reset_all_filters(n_clicks):
             """Reset all filters to their default values"""
-            return CURRENT_YEAR, "all", "all", "all", "all"
+            return CURRENT_YEAR, "all", "all", "all", "all", "all"
 
         @self.app.callback(
             Output("year-filter", "options"),
@@ -869,11 +894,12 @@ class ResulamDashboard:
             Input("author-filter", "value"),
             Input("booktype-filter", "value"),
             Input("book-filter", "value"),
+            Input("category-filter", "value"),
             Input("data-refresh-signal", "data"),
             prevent_initial_call=False
         )
-        def update_metrics(selected_years, selected_language, selected_author, selected_booktype, selected_book, refresh_signal):
-            """Update metrics based on selected years, language, author, book type, and book"""
+        def update_metrics(selected_years, selected_language, selected_author, selected_booktype, selected_book, selected_category, refresh_signal):
+            """Update metrics based on selected years, language, author, book type, book, and category"""
             # refresh_signal is just a trigger to ensure metrics update when data changes
             
             if not selected_years:  # If no years selected, show all
@@ -903,6 +929,42 @@ class ResulamDashboard:
                 filtered_df = filtered_df[filtered_df['book_nick_name'] == selected_book]
                 filtered_exploded = filtered_exploded[filtered_exploded['book_nick_name'] == selected_book]
             
+            # Apply category filter
+            if selected_category and selected_category != "all":
+                try:
+                    books_df = pd.read_csv(BOOKS_DATABASE_PATH)
+                    category_books = books_df[books_df['category'] == selected_category]
+                    
+                    from src.hardcoded_nicknames import HARDCODED_TITLE_NICKNAMES, DB_NICKNAME_TO_ROYALTY
+                    category_nicknames = set()
+                    
+                    # Get all database nicknames for this category
+                    db_nicknames = category_books['book_nick_name'].dropna().tolist()
+                    
+                    for db_nick in db_nicknames:
+                        # First, check if this DB nickname maps to royalty nicknames
+                        if db_nick in DB_NICKNAME_TO_ROYALTY:
+                            category_nicknames.update(DB_NICKNAME_TO_ROYALTY[db_nick])
+                        else:
+                            # Add the DB nickname itself (might match directly)
+                            category_nicknames.add(db_nick)
+                    
+                    # Also try to match via title -> hardcoded nicknames
+                    category_titles = category_books['title'].tolist()
+                    for title in category_titles:
+                        if title:
+                            for hc_title, nickname in HARDCODED_TITLE_NICKNAMES.items():
+                                if (title in hc_title or hc_title in str(title) or 
+                                    title.split(':')[0].strip() == hc_title.split(':')[0].strip()):
+                                    category_nicknames.add(nickname)
+                                    break
+                    
+                    if category_nicknames:
+                        filtered_df = filtered_df[filtered_df['book_nick_name'].isin(category_nicknames)]
+                        filtered_exploded = filtered_exploded[filtered_exploded['book_nick_name'].isin(category_nicknames)]
+                except Exception as e:
+                    print(f"Error in category filter: {e}")
+            
             metrics = SummaryMetrics.calculate_metrics(filtered_df, filtered_exploded)
             
             # Calculate return books (based on Units Refunded column)
@@ -927,10 +989,11 @@ class ResulamDashboard:
             Input("author-filter", "value"),
             Input("booktype-filter", "value"),
             Input("book-filter", "value"),
+            Input("category-filter", "value"),
             Input("data-refresh-signal", "data"),
             prevent_initial_call=False
         )
-        def update_sales_trend(selected_years, selected_language, selected_author, selected_booktype, selected_book, refresh_signal):
+        def update_sales_trend(selected_years, selected_language, selected_author, selected_booktype, selected_book, selected_category, refresh_signal):
             """Update sales trend chart with dynamic title"""
             trend_data = self.royalties
             filter_parts = []
@@ -950,6 +1013,40 @@ class ResulamDashboard:
             if selected_book and selected_book != "all":
                 trend_data = trend_data[trend_data['book_nick_name'] == selected_book]
                 filter_parts.append(selected_book)
+            
+            # Apply category filter
+            if selected_category and selected_category != "all":
+                try:
+                    books_df = pd.read_csv(BOOKS_DATABASE_PATH)
+                    category_books = books_df[books_df['category'] == selected_category]
+                    
+                    from src.hardcoded_nicknames import HARDCODED_TITLE_NICKNAMES, DB_NICKNAME_TO_ROYALTY
+                    category_nicknames = set()
+                    
+                    # Get all database nicknames for this category
+                    db_nicknames = category_books['book_nick_name'].dropna().tolist()
+                    
+                    for db_nick in db_nicknames:
+                        if db_nick in DB_NICKNAME_TO_ROYALTY:
+                            category_nicknames.update(DB_NICKNAME_TO_ROYALTY[db_nick])
+                        else:
+                            category_nicknames.add(db_nick)
+                    
+                    # Also match via title -> hardcoded nicknames
+                    category_titles = category_books['title'].tolist()
+                    for title in category_titles:
+                        if title:
+                            for hc_title, nickname in HARDCODED_TITLE_NICKNAMES.items():
+                                if (title in hc_title or hc_title in str(title) or 
+                                    title.split(':')[0].strip() == hc_title.split(':')[0].strip()):
+                                    category_nicknames.add(nickname)
+                                    break
+                    
+                    if category_nicknames:
+                        trend_data = trend_data[trend_data['book_nick_name'].isin(category_nicknames)]
+                    filter_parts.append(f"📚 {selected_category}")
+                except Exception:
+                    pass
             
             total_books = trend_data['Net Units Sold'].sum()
             filter_text = " | ".join(filter_parts) if filter_parts else "All"
@@ -1167,10 +1264,11 @@ class ResulamDashboard:
             Input("author-filter", "value"),
             Input("booktype-filter", "value"),
             Input("book-filter", "value"),
+            Input("category-filter", "value"),
             prevent_initial_call=False
         )
-        def render_tab_content(active_tab, selected_years, selected_language, selected_author, selected_booktype, selected_book):
-            """Render content based on active tab, years, language, author, book type, and book filter"""
+        def render_tab_content(active_tab, selected_years, selected_language, selected_author, selected_booktype, selected_book, selected_category):
+            """Render content based on active tab, years, language, author, book type, book, and category filter"""
             
             # Filter data based on selected years
             if not selected_years:
@@ -1200,6 +1298,42 @@ class ResulamDashboard:
                 filtered_royalties = filtered_royalties[filtered_royalties['book_nick_name'] == selected_book]
                 filtered_exploded = filtered_exploded[filtered_exploded['book_nick_name'] == selected_book]
             
+            # Filter by category if selected (applies to all tabs)
+            if selected_category and selected_category != "all":
+                try:
+                    # Load books database to get title -> category mapping
+                    books_df = pd.read_csv(BOOKS_DATABASE_PATH)
+                    category_books = books_df[books_df['category'] == selected_category]
+                    
+                    from src.hardcoded_nicknames import HARDCODED_TITLE_NICKNAMES, DB_NICKNAME_TO_ROYALTY
+                    category_nicknames = set()
+                    
+                    # Get all database nicknames for this category and map to royalty nicknames
+                    db_nicknames = category_books['book_nick_name'].dropna().tolist()
+                    for db_nick in db_nicknames:
+                        if db_nick in DB_NICKNAME_TO_ROYALTY:
+                            category_nicknames.update(DB_NICKNAME_TO_ROYALTY[db_nick])
+                        else:
+                            category_nicknames.add(db_nick)
+                    
+                    # Also match via title -> hardcoded nicknames
+                    category_titles = category_books['title'].tolist()
+                    for title in category_titles:
+                        if title:
+                            for hc_title, nickname in HARDCODED_TITLE_NICKNAMES.items():
+                                if (title in hc_title or hc_title in str(title) or 
+                                    title.split(':')[0].strip() == hc_title.split(':')[0].strip()):
+                                    category_nicknames.add(nickname)
+                                    break
+                    
+                    # Filter royalties to only include books in this category
+                    if category_nicknames:
+                        filtered_royalties = filtered_royalties[filtered_royalties['book_nick_name'].isin(category_nicknames)]
+                        filtered_exploded = filtered_exploded[filtered_exploded['book_nick_name'].isin(category_nicknames)]
+                except Exception as e:
+                    print(f"Category filter error: {e}")
+                    pass  # If books database can't be loaded, skip category filter
+            
             # Build filter text for dynamic titles
             filter_parts = []
             if selected_years and len(selected_years) == 1:
@@ -1216,6 +1350,8 @@ class ResulamDashboard:
                 filter_parts.append("📱 eBook" if selected_booktype == "Ebook" else "📖 Physical")
             if selected_book and selected_book != "all":
                 filter_parts.append(selected_book)
+            if selected_category and selected_category != "all":
+                filter_parts.append(f"📚 {selected_category}")
             filter_text = " | ".join(filter_parts)
             
             if active_tab == "sales":
@@ -1229,7 +1365,7 @@ class ResulamDashboard:
             elif active_tab == "geography":
                 return self._create_geography_tab(filtered_royalties, filter_text)
             elif active_tab == "purchase":
-                return self._create_purchase_tab(filtered_royalties, selected_language, selected_author, selected_booktype, selected_book)
+                return self._create_purchase_tab(filtered_royalties, selected_language, selected_author, selected_booktype, selected_book, selected_category)
             
             return html.Div("Select a tab to view content")
         
@@ -1696,18 +1832,21 @@ class ResulamDashboard:
             State("purchase-download-data", "data"),
             prevent_initial_call=True,
         )
-        def download_purchase_csv(n_clicks, download_data):
+        def download_purchase_csv(n_clicks, download_data_str):
             """Download filtered books data as CSV"""
-            if not download_data:
+            if not download_data_str:
                 return None
             
             import io
-            df = pd.read_json(io.StringIO(download_data), orient='split')
+            import json
+            download_data = json.loads(download_data_str)
+            df = pd.read_json(io.StringIO(download_data['data']), orient='split')
+            filename_suffix = download_data.get('filename_suffix', 'all_books')
             
             # Create CSV with UTF-8-sig BOM
             csv_content = df.to_csv(index=False)
             csv_with_bom = '\ufeff' + csv_content
-            return dict(content=csv_with_bom, filename="resulam_books_purchase_links.csv")
+            return dict(content=csv_with_bom, filename=f"resulam_books_{filename_suffix}.csv")
         
         @self.app.callback(
             Output("download-purchase-excel", "data"),
@@ -1715,13 +1854,16 @@ class ResulamDashboard:
             State("purchase-download-data", "data"),
             prevent_initial_call=True,
         )
-        def download_purchase_excel(n_clicks, download_data):
+        def download_purchase_excel(n_clicks, download_data_str):
             """Download filtered books data as Excel"""
-            if not download_data:
+            if not download_data_str:
                 return None
             
             import io
-            df = pd.read_json(io.StringIO(download_data), orient='split')
+            import json
+            download_data = json.loads(download_data_str)
+            df = pd.read_json(io.StringIO(download_data['data']), orient='split')
+            filename_suffix = download_data.get('filename_suffix', 'all_books')
             
             # Create Excel file in memory
             output = io.BytesIO()
@@ -1729,7 +1871,7 @@ class ResulamDashboard:
                 df.to_excel(writer, index=False, sheet_name='Books')
             output.seek(0)
             
-            return dcc.send_bytes(output.getvalue(), "resulam_books_purchase_links.xlsx")
+            return dcc.send_bytes(output.getvalue(), f"resulam_books_{filename_suffix}.xlsx")
         
         @self.app.callback(
             Output("download-purchase-txt", "data"),
@@ -1737,16 +1879,38 @@ class ResulamDashboard:
             State("purchase-download-data", "data"),
             prevent_initial_call=True,
         )
-        def download_purchase_txt(n_clicks, download_data):
+        def download_purchase_txt(n_clicks, download_data_str):
             """Download filtered books data as plain text"""
-            if not download_data:
+            if not download_data_str:
                 return None
             
             import io
-            df = pd.read_json(io.StringIO(download_data), orient='split')
+            import json
+            download_data = json.loads(download_data_str)
+            df = pd.read_json(io.StringIO(download_data['data']), orient='split')
+            filter_text = download_data.get('filter_text', 'All Books')
+            filter_info = download_data.get('filter_info', {})
+            
+            # Build detailed title with filter info
+            title_parts = ["RESULAM BOOKS - AMAZON PURCHASE LINKS"]
+            filter_details = []
+            if filter_info.get('category'):
+                filter_details.append(f"Category: {filter_info['category']}")
+            if filter_info.get('language'):
+                filter_details.append(f"Language: {filter_info['language']}")
+            if filter_info.get('author'):
+                filter_details.append(f"Author: {filter_info['author']}")
+            if filter_info.get('booktype'):
+                format_labels = {"Ebook": "eBook", "Paper": "Paperback", "HardCover": "Hardcover"}
+                filter_details.append(f"Format: {format_labels.get(filter_info['booktype'], filter_info['booktype'])}")
+            if filter_info.get('book'):
+                filter_details.append(f"Book: {filter_info['book']}")
             
             # Create formatted plain text
-            txt_content = "RESULAM BOOKS - AMAZON PURCHASE LINKS\n"
+            txt_content = "=" * 100 + "\n"
+            txt_content += "RESULAM BOOKS - AMAZON PURCHASE LINKS\n"
+            if filter_details:
+                txt_content += f"Filtered by: {' | '.join(filter_details)}\n"
             txt_content += "=" * 100 + "\n\n"
             txt_content += f"Total Books: {len(df)}\n"
             txt_content += f"Generated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
@@ -1773,9 +1937,25 @@ class ResulamDashboard:
             txt_content += "=" * 100 + "\n"
             txt_content += "End of Report\n"
             
+            # Build dynamic filename based on filters
+            filename_parts = ["resulam_books"]
+            if filter_info:
+                if filter_info.get('category'):
+                    cat_name = filter_info['category'].lower().replace(' ', '_').replace('-', '_')[:20]
+                    filename_parts.append(cat_name)
+                if filter_info.get('author'):
+                    author_name = filter_info['author'].lower().replace(' ', '_')[:15]
+                    filename_parts.append(author_name)
+                if filter_info.get('language'):
+                    filename_parts.append(filter_info['language'].lower())
+                if filter_info.get('year'):
+                    filename_parts.append(str(filter_info['year']))
+            filename_parts.append("purchase_links")
+            filename = "_".join(filename_parts) + ".txt"
+            
             # Add UTF-8 BOM
             txt_with_bom = '\ufeff' + txt_content
-            return dict(content=txt_with_bom, filename="resulam_books_purchase_links.txt")
+            return dict(content=txt_with_bom, filename=filename)
     
     def _create_sales_tab(self, data=None, selected_years=None, selected_language=None):
         """Create sales overview tab content"""
@@ -2190,7 +2370,7 @@ class ResulamDashboard:
             ])
         ], fluid=True)
     
-    def _create_purchase_tab(self, data=None, selected_language=None, selected_author=None, selected_booktype=None, selected_book=None):
+    def _create_purchase_tab(self, data=None, selected_language=None, selected_author=None, selected_booktype=None, selected_book=None, selected_category=None):
         """Create purchase the book tab content with Amazon links"""
         import unicodedata
         
@@ -2277,6 +2457,10 @@ class ResulamDashboard:
                 booktype_filtered = filtered_books
             if len(booktype_filtered) > 0:
                 filtered_books = booktype_filtered
+        
+        # Apply category filter if selected (strict filter - must match exactly)
+        if selected_category and selected_category != "all":
+            filtered_books = filtered_books[filtered_books['category'] == selected_category]
         
         if len(filtered_books) == 0:
             return dbc.Container([
@@ -2448,7 +2632,23 @@ class ResulamDashboard:
             filter_parts.append(f"Format: {format_labels.get(selected_booktype, selected_booktype)}")
         if selected_book and selected_book != "all":
             filter_parts.append(f"Book: {selected_book}")
+        if selected_category and selected_category != "all":
+            filter_parts.append(f"Category: {selected_category}")
         filter_text = " | ".join(filter_parts) if filter_parts else "All Books"
+        
+        # Build filename-safe filter text
+        filename_parts = []
+        if selected_category and selected_category != "all":
+            filename_parts.append(selected_category.replace(' - ', '_').replace(' ', '_'))
+        if selected_language and selected_language != "all":
+            filename_parts.append(selected_language)
+        if selected_author and selected_author != "all":
+            filename_parts.append(selected_author.replace(' ', '_'))
+        if selected_booktype and selected_booktype != "all":
+            filename_parts.append(selected_booktype)
+        filename_suffix = "_".join(filename_parts) if filename_parts else "all_books"
+        # Clean filename
+        filename_suffix = "".join(c if c.isalnum() or c in '_-' else '_' for c in filename_suffix)
         
         # Prepare download data - clean columns for export
         download_df = filtered_books[['title', 'language_name', 'authors', 'book_nick_name', 'paperback', 'ebook', 'hard_cover']].copy()
@@ -2456,8 +2656,21 @@ class ResulamDashboard:
         # Clean title by removing date suffix
         download_df['Title'] = download_df['Title'].apply(lambda x: str(x).split(' – ')[0].strip() if ' – ' in str(x) else x)
         
-        # Store the filtered data in a hidden div for download callbacks
-        download_data_json = download_df.to_json(date_format='iso', orient='split')
+        # Store the filtered data with metadata for download callbacks
+        import json
+        download_data = {
+            'data': download_df.to_json(date_format='iso', orient='split'),
+            'filter_text': filter_text,
+            'filename_suffix': filename_suffix,
+            'filters': {
+                'category': selected_category if selected_category and selected_category != "all" else None,
+                'language': selected_language if selected_language and selected_language != "all" else None,
+                'author': selected_author if selected_author and selected_author != "all" else None,
+                'booktype': selected_booktype if selected_booktype and selected_booktype != "all" else None,
+                'book': selected_book if selected_book and selected_book != "all" else None
+            }
+        }
+        download_data_json = json.dumps(download_data)
         
         return dbc.Container([
             # Hidden store for download data

@@ -102,3 +102,54 @@ body.light-mode .author-list-total {
         columns: 1;
     }
 }
+
+/* Dropdown text overflow handling - prevent text overlap */
+.Select-value-label,
+.Select-placeholder,
+.Select-input > input,
+.Select-control .Select-value .Select-value-label {
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    max-width: 100% !important;
+}
+
+/* Dropdown menu options - truncate long text with ellipsis */
+.VirtualizedSelectOption,
+.Select-option {
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    padding: 8px 12px !important;
+}
+
+/* Dash Core Components dropdown specific styling */
+.dash-dropdown .Select-control {
+    overflow: hidden !important;
+}
+
+.dash-dropdown .Select-value {
+    max-width: calc(100% - 40px) !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+.dash-dropdown .Select-menu-outer {
+    z-index: 9999 !important;
+}
+
+/* Make dropdown menu wider than the control for better readability */
+.dash-dropdown .Select-menu-outer {
+    min-width: 200px !important;
+    width: auto !important;
+}
+
+/* Ensure dropdown options show full text on hover via tooltip-like behavior */
+.Select-option:hover {
+    overflow: visible !important;
+    white-space: normal !important;
+    word-wrap: break-word !important;
+    position: relative;
+    z-index: 10000;
+}
