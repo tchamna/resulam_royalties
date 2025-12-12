@@ -111,6 +111,7 @@ BOOK_NICKNAME_MAPPING = {
     "La fourmi affamée: Nzhìèkǔ' mɑ̀nkō ngʉ́ngà'": "nufi_fourmi_affamee",
     "Le Grenier du Nguemba: Ntâŋ Ŋgə̂mbà : Ngemba Attic": "ngemba_grenier",
     "Syllabaire et dictionnaire visuel en langue nufi (fe'efe'e): Nkǔnjâ'wū pí mbíághəə": "nufi_syllabaire",
+    "Syllabaire et Dictionnaire Visuel en langue fe'efe'e: Nkǔnjâ'wū pí mbíághəə": "nufi_syllabaire",
     "Yoruba - French - English Phrasebook: Guide de conversation Yoruba – Français - Anglais": "yoruba_phrasebook",
     "Contes africains, contes bamilekés racontés en nufi et traduits en francais: African's fairy tales, bamileke tales": "nufi_contes_bamilekes",
     "La fourmi affamée : Ŋgə̂mbà – Français: Tə́ttá pfʉ́ njjikhwu'ú": "ngemba_fourmi_affamee",

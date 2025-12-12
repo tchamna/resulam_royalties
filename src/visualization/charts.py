@@ -207,6 +207,22 @@ class SalesCharts:
     @staticmethod
     def sales_by_book_horizontal(df: pd.DataFrame, field: str = 'book_nick_name') -> go.Figure:
         """Create horizontal bar chart of sales by book"""
+        # Handle empty data or missing columns
+        if len(df) == 0 or field not in df.columns or 'Net Units Sold' not in df.columns:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No data available for the selected filters",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=16, color="#888")
+            )
+            fig.update_layout(
+                title=f'Total Books Sold by {field.replace("_", " ").title()}',
+                template=VIZ_CONFIG['template'],
+                height=400
+            )
+            return fig
+        
         # Group and sort
         units_by_book = df.groupby(field)['Net Units Sold'].sum().reset_index()
         units_by_book = units_by_book.sort_values(by='Net Units Sold', ascending=True)
@@ -225,7 +241,7 @@ class SalesCharts:
             title=f'Total Books Sold by {field.replace("_", " ").title()}',
             yaxis_title=field.replace("_", " ").title(),
             xaxis_title='Net Units Sold',
-            height=min(700, max(300, len(units_by_book) * 15)),
+            height=max(500, len(units_by_book) * 25),
             template=VIZ_CONFIG['template'],
             xaxis=dict(automargin=True)
         )
@@ -235,6 +251,22 @@ class SalesCharts:
     @staticmethod
     def sales_by_book_with_year_filter(df: pd.DataFrame) -> go.Figure:
         """Create horizontal bar chart with year dropdown filter"""
+        # Handle empty data
+        if len(df) == 0:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No data available for the selected filters",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=16, color="#888")
+            )
+            fig.update_layout(
+                title='Books Sold by Title',
+                template=VIZ_CONFIG['template'],
+                height=400
+            )
+            return fig
+        
         sorted_years = sorted(df['Year Sold'].unique())
         
         fig = go.Figure()
@@ -308,6 +340,22 @@ class AuthorCharts:
     @staticmethod
     def royalties_by_author(df_exploded: pd.DataFrame, top_n: Optional[int] = None) -> go.Figure:
         """Create bar chart of royalties by author"""
+        # Handle empty data
+        if len(df_exploded) == 0:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No data available for the selected filters",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=16, color="#888")
+            )
+            fig.update_layout(
+                title='Royalties by Author',
+                template=VIZ_CONFIG['template'],
+                height=400
+            )
+            return fig
+            
         # Group by author
         author_royalties = df_exploded.groupby('Authors_Exploded').agg({
             'Units Sold': 'sum',
@@ -337,7 +385,7 @@ class AuthorCharts:
             title=f'Royalties by Author{"" if not top_n else f" (Top {top_n})"}',
             yaxis_title='Author',
             xaxis_title='Total Royalties (USD)',
-            height=min(600, len(author_royalties) * 25),
+            height=max(400, min(600, len(author_royalties) * 25)),
             template=VIZ_CONFIG['template'],
             xaxis=dict(automargin=True),
             yaxis=dict(automargin=True)
@@ -348,6 +396,22 @@ class AuthorCharts:
     @staticmethod
     def books_sold_by_author(df_exploded: pd.DataFrame, top_n: Optional[int] = None) -> go.Figure:
         """Create bar chart of books sold by author"""
+        # Handle empty data
+        if len(df_exploded) == 0:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No data available for the selected filters",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=16, color="#888")
+            )
+            fig.update_layout(
+                title='Books Sold by Author',
+                template=VIZ_CONFIG['template'],
+                height=400
+            )
+            return fig
+        
         # Group by author
         author_sales = df_exploded.groupby('Authors_Exploded').agg({
             'Net Units Sold': 'sum'
@@ -373,7 +437,7 @@ class AuthorCharts:
             title=f'Books Sold by Author{"" if not top_n else f" (Top {top_n})"}',
             yaxis_title='Author',
             xaxis_title='Total Books Sold',
-            height=min(600, len(author_sales) * 25),
+            height=max(400, min(600, len(author_sales) * 25)),
             template=VIZ_CONFIG['template'],
             xaxis=dict(automargin=True),
             yaxis=dict(automargin=True)
@@ -470,6 +534,21 @@ class SummaryMetrics:
             df: Non-exploded royalties dataframe
             df_exploded: Exploded royalties dataframe (optional, for accurate author count)
         """
+        # Handle empty data or missing columns
+        required_cols = ['Net Units Sold', 'Royalty USD', 'Royalty per Author (USD)', 'Title', 'Year Sold']
+        if len(df) == 0 or not all(col in df.columns for col in required_cols):
+            return {
+                'total_books_sold': 0,
+                'total_revenue_usd': 0.0,
+                'net_revenue_usd': 0.0,
+                'total_royalties_shared': 0.0,
+                'resulam_share': 0.0,
+                'unique_titles': 0,
+                'unique_authors': 0,
+                'avg_price_per_book': 0.0,
+                'years_active': 0
+            }
+        
         total_books_sold = df['Net Units Sold'].sum()
         total_revenue_usd = df['Royalty USD'].sum()
         # Deduct 20% for transaction fees and taxes
@@ -486,22 +565,28 @@ class SummaryMetrics:
         
         # Count unique authors after normalization
         # Use exploded data if available, otherwise use author combinations
-        if df_exploded is not None:
+        if df_exploded is not None and len(df_exploded) > 0:
             # Use individual authors from exploded data and normalize
             normalized_authors = set()
             for author in df_exploded['Authors_Exploded'].unique():
                 normalized_authors.add(SummaryMetrics.normalize_author_name(author))
             unique_authors = len(normalized_authors)
-        else:
+        elif len(df) > 0:
             # Fallback: use author combinations
             normalized_authors = set()
             for author_combo in df['Authors'].unique():
                 normalized_authors.add(SummaryMetrics.normalize_author_name(author_combo))
             unique_authors = len(normalized_authors)
+        else:
+            unique_authors = 0
         
         avg_price_per_book = total_revenue_usd / total_books_sold if total_books_sold > 0 else 0
         
-        years_active = df['Year Sold'].max() - df['Year Sold'].min() + 1
+        # Handle empty dataframe case for years_active
+        if len(df) > 0:
+            years_active = df['Year Sold'].max() - df['Year Sold'].min() + 1
+        else:
+            years_active = 0
         
         return {
             'total_books_sold': int(total_books_sold),

@@ -8,6 +8,7 @@ from typing import Dict
 from pathlib import Path
 import pandas as pd
 import math
+import plotly.graph_objects as go
 
 from ..config import DASHBOARD_CONFIG, CURRENT_YEAR, LAST_YEAR, AUTHOR_NORMALIZATION, NET_REVENUE_PERCENTAGE
 from ..visualization import SalesCharts, AuthorCharts, GeographicCharts, SummaryMetrics
@@ -19,6 +20,30 @@ def normalize_author_name(name: str) -> str:
     if name in AUTHOR_NORMALIZATION:
         return AUTHOR_NORMALIZATION[name]
     return name
+
+
+def filter_by_author(df: pd.DataFrame, selected_author: str, authors_column: str = 'Authors') -> pd.DataFrame:
+    """Filter dataframe by author, handling normalization properly.
+    
+    This function checks if any author in the Authors column (which may contain
+    multiple authors separated by commas) normalizes to the selected author.
+    """
+    if not selected_author or selected_author == "all":
+        return df
+    
+    def row_has_author(authors_str):
+        if pd.isna(authors_str):
+            return False
+        # Split by common separators and check each author
+        for sep in [',', ';', '&', ' and ']:
+            if sep in str(authors_str):
+                for author in str(authors_str).split(sep):
+                    if normalize_author_name(author.strip()) == selected_author:
+                        return True
+        # Also check the whole string
+        return normalize_author_name(str(authors_str).strip()) == selected_author
+    
+    return df[df[authors_column].apply(row_has_author)]
 
 
 def get_unique_authors(authors_series: pd.Series) -> list:
@@ -249,6 +274,9 @@ class ResulamDashboard:
         # Get unique languages for language filter
         all_languages = sorted(self.royalties['Language'].unique().tolist())
         
+        # Get unique authors for author filter
+        all_authors_for_filter = get_unique_authors(self.royalties_exploded['Authors_Exploded'])
+        
         filter_section = dbc.Container([
             dbc.Row([
                 dbc.Col([
@@ -264,7 +292,7 @@ class ResulamDashboard:
                         style={"width": "100%"}
                     ),
                     dcc.Store(id="year-filter-store", data=[CURRENT_YEAR])  # Store current year by default
-                ], md=6),
+                ], md=4),
                 dbc.Col([
                     dbc.Label("Filter by Language:", className="fw-bold"),
                     dcc.Dropdown(
@@ -278,7 +306,21 @@ class ResulamDashboard:
                         clearable=False,
                         style={"width": "100%"}
                     )
-                ], md=6)
+                ], md=4),
+                dbc.Col([
+                    dbc.Label("Filter by Author:", className="fw-bold"),
+                    dcc.Dropdown(
+                        id="author-filter",
+                        options=[{"label": "All Authors", "value": "all"}] + [
+                            {"label": author, "value": author} for author in all_authors_for_filter
+                        ],
+                        value="all",
+                        multi=False,
+                        searchable=True,
+                        clearable=False,
+                        style={"width": "100%"}
+                    )
+                ], md=4)
             ], className="mb-3")
         ], fluid=True, className="py-3 mb-4")
         
@@ -585,11 +627,12 @@ class ResulamDashboard:
             Output("metric-returns", "children"),
             Input("year-filter-store", "data"),
             Input("language-filter", "value"),
+            Input("author-filter", "value"),
             Input("data-refresh-signal", "data"),
             prevent_initial_call=False
         )
-        def update_metrics(selected_years, selected_language, refresh_signal):
-            """Update metrics based on selected years and language"""
+        def update_metrics(selected_years, selected_language, selected_author, refresh_signal):
+            """Update metrics based on selected years, language, and author"""
             # refresh_signal is just a trigger to ensure metrics update when data changes
             
             if not selected_years:  # If no years selected, show all
@@ -603,6 +646,11 @@ class ResulamDashboard:
             if selected_language and selected_language != "all":
                 filtered_df = filtered_df[filtered_df['Language'] == selected_language]
                 filtered_exploded = filtered_exploded[filtered_exploded['Language'] == selected_language]
+            
+            # Apply author filter
+            if selected_author and selected_author != "all":
+                filtered_df = filter_by_author(filtered_df, selected_author, 'Authors')
+                filtered_exploded = filtered_exploded[filtered_exploded['Authors_Exploded'].apply(lambda x: normalize_author_name(x)) == selected_author]
             
             metrics = SummaryMetrics.calculate_metrics(filtered_df, filtered_exploded)
             
@@ -625,19 +673,26 @@ class ResulamDashboard:
             Output("sales-trend-chart", "figure"),
             Input("year-filter-store", "data"),
             Input("language-filter", "value"),
+            Input("author-filter", "value"),
             Input("data-refresh-signal", "data"),
             prevent_initial_call=False
         )
-        def update_sales_trend(selected_years, selected_language, refresh_signal):
+        def update_sales_trend(selected_years, selected_language, selected_author, refresh_signal):
             """Update sales trend chart with dynamic title"""
             trend_data = self.royalties
+            filter_parts = []
+            
             if selected_language and selected_language != "all":
-                trend_data = self.royalties[self.royalties['Language'] == selected_language]
-                total_books = trend_data['Net Units Sold'].sum()
-                trend_title = f"📈 Sales Trend: {selected_language} ({min(self.available_years)} - {max(self.available_years)}): {int(total_books):,} books sold"
-            else:
-                total_books = self.royalties['Net Units Sold'].sum()
-                trend_title = f"📈 Sales Trend: {min(self.available_years)} - {max(self.available_years)}: {int(total_books):,} books sold"
+                trend_data = trend_data[trend_data['Language'] == selected_language]
+                filter_parts.append(selected_language)
+            
+            if selected_author and selected_author != "all":
+                trend_data = filter_by_author(trend_data, selected_author, 'Authors')
+                filter_parts.append(selected_author)
+            
+            total_books = trend_data['Net Units Sold'].sum()
+            filter_text = " | ".join(filter_parts) if filter_parts else "All"
+            trend_title = f"📈 Sales Trend: {filter_text} ({min(self.available_years)} - {max(self.available_years)}): {int(total_books):,} books sold"
             
             from src.visualization.charts import SalesCharts
             fig = SalesCharts.books_sold_per_year(trend_data, title=trend_title)
@@ -647,23 +702,47 @@ class ResulamDashboard:
             Output("sales-by-language-chart", "figure"),
             Input("year-filter-store", "data"),
             Input("language-filter", "value"),
+            Input("author-filter", "value"),
             Input("sales-language-display-mode", "value"),
             Input("data-refresh-signal", "data"),
             prevent_initial_call=False
         )
-        def update_sales_by_language(selected_years, selected_language, display_mode, refresh_signal):
+        def update_sales_by_language(selected_years, selected_language, selected_author, display_mode, refresh_signal):
             """Update sales by language stacked chart by year"""
             if not selected_years:
                 filtered_df = self.royalties
             else:
                 filtered_df = self.royalties[self.royalties['Year Sold'].isin(selected_years)]
             
+            # Apply language filter
+            if selected_language and selected_language != "all":
+                filtered_df = filtered_df[filtered_df['Language'] == selected_language]
+            
+            # Apply author filter
+            if selected_author and selected_author != "all":
+                filtered_df = filter_by_author(filtered_df, selected_author, 'Authors')
+            
+            # Build filter text for title
+            filter_parts = []
+            if selected_years and len(selected_years) == 1:
+                filter_parts.append(str(selected_years[0]))
+            elif selected_years and len(selected_years) > 1:
+                filter_parts.append(f"{min(selected_years)}-{max(selected_years)}")
+            if selected_language and selected_language != "all":
+                filter_parts.append(selected_language)
+            if selected_author and selected_author != "all":
+                filter_parts.append(selected_author)
+            filter_text = " | ".join(filter_parts) if filter_parts else ""
+            
             if len(filtered_df) == 0:
                 import plotly.graph_objects as go
                 fig = go.Figure()
                 fig.add_annotation(text="No sales data available", xref="paper", yref="paper",
                                    x=0.5, y=0.5, showarrow=False)
-                fig.update_layout(template="plotly_dark", height=400, title="Sales by Language (All - Grouped)")
+                title_with_filters = "Sales by Language (No Data)"
+                if filter_text:
+                    title_with_filters = f"Sales by Language - {filter_text} (No Data)"
+                fig.update_layout(template="plotly_dark", height=400, title=title_with_filters)
                 return fig
             
             # Sort by year to ensure proper ordering
@@ -690,7 +769,11 @@ class ResulamDashboard:
                 title_suffix = "All - Grouped"
                 barmode = 'group'
 
-            chart_title = f"Sales by Language ({title_suffix})"
+            # Build chart title with filters
+            if filter_text:
+                chart_title = f"Sales by Language - {filter_text} ({title_suffix})"
+            else:
+                chart_title = f"Sales by Language ({title_suffix})"
 
             from src.visualization.charts import SalesCharts
             fig = SalesCharts.sales_by_language_stacked(
@@ -707,9 +790,10 @@ class ResulamDashboard:
             Output("returns-by-language-chart", "figure"),
             Input("year-filter-store", "data"),
             Input("language-filter", "value"),
+            Input("author-filter", "value"),
             prevent_initial_call=False
         )
-        def update_returns_by_language(selected_years, selected_language):
+        def update_returns_by_language(selected_years, selected_language, selected_author):
             """Update returns by book (nickname) chart - only show books with returns"""
             if not selected_years:
                 filtered_df = self.royalties
@@ -720,6 +804,27 @@ class ResulamDashboard:
                     period_text = f"{selected_years[0]}"
                 else:
                     period_text = f"{min(selected_years)} - {max(selected_years)}"
+            
+            # Apply language filter
+            if selected_language and selected_language != "all":
+                filtered_df = filtered_df[filtered_df['Language'] == selected_language]
+                period_text += f" | {selected_language}"
+            
+            # Apply author filter
+            if selected_author and selected_author != "all":
+                # Filter by author using proper normalization
+                filtered_df = filter_by_author(filtered_df, selected_author, 'Authors')
+                period_text += f" | {selected_author}"
+            
+            # Handle empty filtered data or missing columns
+            if len(filtered_df) == 0 or 'Units Refunded' not in filtered_df.columns:
+                import plotly.graph_objects as go
+                fig = go.Figure()
+                fig.add_annotation(text="No data available for the selected filters", xref="paper", yref="paper",
+                                   x=0.5, y=0.5, showarrow=False, font=dict(size=16, color="#888"))
+                fig.update_layout(template="plotly_dark", height=400, title="Returned Books")
+                returns_title = f"🌐 Returned Books ({period_text}): 0 units refunded"
+                return returns_title, fig
             
             # Get returns by book nickname and filter out books with no returns
             returns_by_book = filtered_df[filtered_df['Units Refunded'] > 0].groupby('book_nick_name')['Units Refunded'].sum().sort_values(ascending=False)
@@ -772,10 +877,11 @@ class ResulamDashboard:
             Input("dashboard-tabs", "active_tab"),
             Input("year-filter-store", "data"),
             Input("language-filter", "value"),
+            Input("author-filter", "value"),
             prevent_initial_call=False
         )
-        def render_tab_content(active_tab, selected_years, selected_language):
-            """Render content based on active tab, years, and language filter"""
+        def render_tab_content(active_tab, selected_years, selected_language, selected_author):
+            """Render content based on active tab, years, language, and author filter"""
             
             # Filter data based on selected years
             if not selected_years:
@@ -785,10 +891,29 @@ class ResulamDashboard:
                 filtered_royalties = self.royalties[self.royalties['Year Sold'].isin(selected_years)]
                 filtered_exploded = self.royalties_exploded[self.royalties_exploded['Year Sold'].isin(selected_years)]
             
-            # Filter by language if selected in sales tab
+            # Filter by language if selected
             if selected_language and selected_language != "all":
                 filtered_royalties = filtered_royalties[filtered_royalties['Language'] == selected_language]
                 filtered_exploded = filtered_exploded[filtered_exploded['Language'] == selected_language]
+            
+            # Filter by author if selected
+            if selected_author and selected_author != "all":
+                filtered_royalties = filter_by_author(filtered_royalties, selected_author, 'Authors')
+                filtered_exploded = filtered_exploded[filtered_exploded['Authors_Exploded'].apply(lambda x: normalize_author_name(x)) == selected_author]
+            
+            # Build filter text for dynamic titles
+            filter_parts = []
+            if selected_years and len(selected_years) == 1:
+                filter_parts.append(str(selected_years[0]))
+            elif selected_years and len(selected_years) > 1:
+                filter_parts.append(f"{min(selected_years)} - {max(selected_years)}")
+            else:
+                filter_parts.append("Lifetime")
+            if selected_language and selected_language != "all":
+                filter_parts.append(selected_language)
+            if selected_author and selected_author != "all":
+                filter_parts.append(selected_author)
+            filter_text = " | ".join(filter_parts)
             
             if active_tab == "sales":
                 return self._create_sales_tab(filtered_royalties, selected_years, selected_language)
@@ -799,7 +924,7 @@ class ResulamDashboard:
             elif active_tab == "trends":
                 return self._create_earning_history_tab(filtered_exploded)
             elif active_tab == "geography":
-                return self._create_geography_tab(filtered_royalties)
+                return self._create_geography_tab(filtered_royalties, filter_text)
             
             return html.Div("Select a tab to view content")
         
@@ -830,21 +955,56 @@ class ResulamDashboard:
         
         @self.app.callback(
             Output('author-trends-graph', 'figure'),
-            Input('author-selector-dropdown', 'value'),
+            [Input('author-selector-dropdown', 'value'),
+             Input('year-filter-store', 'data'),
+             Input('language-filter', 'value'),
+             Input('author-filter', 'value')],
             State('dashboard-tabs', 'active_tab'),
             prevent_initial_call=False
         )
-        def update_author_earnings_history(selected_authors, active_tab):
-            """Update author earnings history chart based on selected authors"""
+        def update_author_earnings_history(selected_authors, selected_years, selected_language, selected_author, active_tab):
+            """Update author earnings history chart based on selected authors and filters"""
+            import plotly.graph_objects as go
+            
+            # Apply filters to get filtered data
+            if not selected_years:
+                filtered_exploded = self.royalties_exploded
+            else:
+                filtered_exploded = self.royalties_exploded[self.royalties_exploded['Year Sold'].isin(selected_years)]
+            
+            # Filter by language if selected
+            if selected_language and selected_language != "all":
+                filtered_exploded = filtered_exploded[filtered_exploded['Language'] == selected_language]
+            
+            # Filter by author if selected
+            if selected_author and selected_author != "all":
+                filtered_exploded = filtered_exploded[filtered_exploded['Authors_Exploded'].apply(lambda x: normalize_author_name(x)) == selected_author]
+            
+            # Handle empty data
+            if len(filtered_exploded) == 0:
+                fig = go.Figure()
+                fig.add_annotation(
+                    text="No data available for the selected filters",
+                    xref="paper", yref="paper",
+                    x=0.5, y=0.5, showarrow=False,
+                    font=dict(size=16, color="#888")
+                )
+                fig.update_layout(
+                    title='Author Earnings by Year',
+                    template="plotly_dark",
+                    height=400
+                )
+                return fig
+            
             if active_tab != 'trends':
-                return EarningHistoryCharts.earnings_trend_all_authors(self.royalties_exploded)
+                return EarningHistoryCharts.earnings_trend_all_authors(filtered_exploded)
             
             if selected_authors and len(selected_authors) > 0:
                 # If specific authors are selected, show only those
-                return EarningHistoryCharts.earnings_trend_selected_authors(self.royalties_exploded, selected_authors)
+                return EarningHistoryCharts.earnings_trend_selected_authors(filtered_exploded, selected_authors)
             else:
                 # If no authors selected, show all
-                return EarningHistoryCharts.earnings_trend_all_authors(self.royalties_exploded)
+                return EarningHistoryCharts.earnings_trend_all_authors(filtered_exploded)
         
         @self.app.callback(
             Output("download-csv", "data"),
@@ -1254,19 +1414,6 @@ class ResulamDashboard:
                         ])
                     ], className="shadow-sm mb-4")
                 ])
-            ]),
-            dbc.Row([
-                dbc.Col([
-                    dbc.Card([
-                        dbc.CardHeader(html.H4("📅 Sales by Book (Yearly View)")),
-                        dbc.CardBody([
-                            dcc.Graph(
-                                figure=SalesCharts.sales_by_book_with_year_filter(data),
-                                config={'displayModeBar': False}
-                            )
-                        ])
-                    ], className="shadow-sm mb-4")
-                ])
             ])
         ], fluid=True)
     
@@ -1288,6 +1435,8 @@ class ResulamDashboard:
             ]
         else:
             metrics_data = self.royalties
+            years_in_data = []
+            languages_in_data = []
         
         return dbc.Container([
             dbc.Row([
@@ -1411,7 +1560,7 @@ class ResulamDashboard:
                     ])
                 ))({author: data[data['Authors_Exploded'].apply(lambda x: normalize_author_name(x)) == author]['Royalty per Author (USD)'].sum() * NET_REVENUE_PERCENTAGE 
                     for author in get_unique_authors(data['Authors_Exploded']) if author.lower() != "resulam"},
-                   ", ".join(map(str, sorted(years_in_data, reverse=True)))),
+                   ", ".join(map(str, sorted(years_in_data, reverse=True))) if years_in_data else "No Data"),
                 dcc.Download(id="download-authors-earnings-csv"),
                 dcc.Download(id="download-authors-earnings-txt"),
                 dcc.Download(id="download-authors-adjustment-csv"),
@@ -1476,19 +1625,45 @@ class ResulamDashboard:
             ])
         ], fluid=True)
     
-    def _create_geography_tab(self, data=None):
+    def _create_geography_tab(self, data=None, filter_text="Lifetime"):
         """Create geographic distribution tab content"""
         if data is None:
             data = self.royalties
+        
+        # Calculate totals for titles
+        total_sales = int(data['Net Units Sold'].sum()) if len(data) > 0 else 0
+        total_revenue = data['Royalty USD'].sum() if len(data) > 0 else 0.0
+        
+        # Create empty figure for when there's no data
+        if len(data) == 0:
+            empty_fig = go.Figure()
+            empty_fig.update_layout(
+                template="plotly_dark",
+                annotations=[{
+                    "text": "No data available for the selected filters",
+                    "xref": "paper",
+                    "yref": "paper",
+                    "x": 0.5,
+                    "y": 0.5,
+                    "showarrow": False,
+                    "font": {"size": 16, "color": "#888"}
+                }],
+                height=400
+            )
+            sales_fig = empty_fig
+            revenue_fig = empty_fig
+        else:
+            sales_fig = GeographicCharts.sales_by_marketplace(data)
+            revenue_fig = GeographicCharts.revenue_by_marketplace(data)
             
         return dbc.Container([
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader(html.H4("🌍 Sales Distribution by Marketplace")),
+                        dbc.CardHeader(html.H4(f"🌍 Sales Distribution by Marketplace ({filter_text}): {total_sales:,} books")),
                         dbc.CardBody([
                             dcc.Graph(
-                                figure=GeographicCharts.sales_by_marketplace(data),
+                                figure=sales_fig,
                                 config={'displayModeBar': False}
                             )
                         ])
@@ -1496,10 +1671,10 @@ class ResulamDashboard:
                 ], md=6),
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader(html.H4("💵 Revenue by Marketplace")),
+                        dbc.CardHeader(html.H4(f"💵 Revenue by Marketplace ({filter_text}): ${total_revenue:,.2f}")),
                         dbc.CardBody([
                             dcc.Graph(
-                                figure=GeographicCharts.revenue_by_marketplace(data),
+                                figure=revenue_fig,
                                 config={'displayModeBar': False}
                             )
                         ])
