@@ -241,7 +241,7 @@ class SalesCharts:
             title=f'Total Books Sold by {field.replace("_", " ").title()}',
             yaxis_title=field.replace("_", " ").title(),
             xaxis_title='Net Units Sold',
-            height=max(500, len(units_by_book) * 25),
+            height=max(500, len(units_by_book) * 25),  # Dynamic height based on items
             template=VIZ_CONFIG['template'],
             xaxis=dict(automargin=True)
         )
@@ -329,6 +329,147 @@ class SalesCharts:
             template=VIZ_CONFIG['template'],
             xaxis=dict(automargin=True),
             yaxis=dict(automargin=True)
+        )
+        
+        return fig
+
+    @staticmethod
+    def ebook_vs_physical_pie(df: pd.DataFrame) -> go.Figure:
+        """Create pie chart comparing eBook vs Physical book sales"""
+        if len(df) == 0 or 'BookType' not in df.columns:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No data available",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=16, color="#888")
+            )
+            fig.update_layout(title='eBook vs Physical Sales', template=VIZ_CONFIG['template'], height=350)
+            return fig
+        
+        # Group by BookType
+        sales_by_type = df.groupby('BookType')['Net Units Sold'].sum().reset_index()
+        # Create a simpler category: eBook vs Physical (Paper + HardCover)
+        sales_by_type['Category'] = sales_by_type['BookType'].apply(
+            lambda x: '📱 eBook' if x == 'Ebook' else '📖 Physical' if x in ['Paper', 'HardCover'] else 'Unknown'
+        )
+        category_sales = sales_by_type.groupby('Category')['Net Units Sold'].sum().reset_index()
+        category_sales = category_sales[category_sales['Category'] != 'Unknown']
+        
+        colors = {'📱 eBook': '#3498db', '📖 Physical': '#e74c3c'}
+        
+        fig = go.Figure(data=[go.Pie(
+            labels=category_sales['Category'],
+            values=category_sales['Net Units Sold'],
+            hole=0.4,
+            marker_colors=[colors.get(c, '#95a5a6') for c in category_sales['Category']],
+            textinfo='label+percent',
+            textposition='outside'
+        )])
+        
+        fig.update_layout(
+            title='📊 eBook vs Physical Sales',
+            template=VIZ_CONFIG['template'],
+            height=350,
+            showlegend=False
+        )
+        
+        return fig
+
+    @staticmethod
+    def ebook_vs_physical_by_year(df: pd.DataFrame) -> go.Figure:
+        """Create stacked bar chart of eBook vs Physical sales by year"""
+        if len(df) == 0 or 'BookType' not in df.columns:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No data available",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=16, color="#888")
+            )
+            fig.update_layout(title='Sales by Format Over Time', template=VIZ_CONFIG['template'], height=350)
+            return fig
+        
+        # Map to simpler categories
+        df = df.copy()
+        df['Category'] = df['BookType'].apply(
+            lambda x: 'eBook' if x == 'Ebook' else 'Physical' if x in ['Paper', 'HardCover'] else None
+        )
+        df = df[df['Category'].notna()]
+        
+        # Group by year and category
+        sales_by_year_type = df.groupby(['Year Sold', 'Category'])['Net Units Sold'].sum().reset_index()
+        
+        fig = go.Figure()
+        
+        colors = {'eBook': '#3498db', 'Physical': '#e74c3c'}
+        
+        for category in ['eBook', 'Physical']:
+            cat_data = sales_by_year_type[sales_by_year_type['Category'] == category]
+            fig.add_trace(go.Bar(
+                x=cat_data['Year Sold'],
+                y=cat_data['Net Units Sold'],
+                name=f'📱 {category}' if category == 'eBook' else f'📖 {category}',
+                marker_color=colors[category],
+                text=cat_data['Net Units Sold'],
+                textposition='auto'
+            ))
+        
+        fig.update_layout(
+            title='📈 eBook vs Physical Sales by Year',
+            xaxis_title='Year',
+            yaxis_title='Units Sold',
+            barmode='group',
+            template=VIZ_CONFIG['template'],
+            height=350,
+            legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='center', x=0.5)
+        )
+        
+        return fig
+
+    @staticmethod
+    def ebook_vs_physical_revenue(df: pd.DataFrame) -> go.Figure:
+        """Create bar chart comparing revenue from eBook vs Physical"""
+        if len(df) == 0 or 'BookType' not in df.columns:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No data available",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=16, color="#888")
+            )
+            fig.update_layout(title='Revenue by Format', template=VIZ_CONFIG['template'], height=350)
+            return fig
+        
+        # Map to simpler categories
+        df = df.copy()
+        df['Category'] = df['BookType'].apply(
+            lambda x: '📱 eBook' if x == 'Ebook' else '📖 Physical' if x in ['Paper', 'HardCover'] else None
+        )
+        df = df[df['Category'].notna()]
+        
+        # Group by category
+        revenue_by_type = df.groupby('Category')['Royalty USD'].sum().reset_index()
+        revenue_by_type = revenue_by_type.sort_values('Royalty USD', ascending=True)
+        
+        colors = {'📱 eBook': '#3498db', '📖 Physical': '#e74c3c'}
+        
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            y=revenue_by_type['Category'],
+            x=revenue_by_type['Royalty USD'],
+            orientation='h',
+            text=revenue_by_type['Royalty USD'].apply(lambda x: f'${x:,.2f}'),
+            textposition='outside',
+            marker_color=[colors.get(c, '#95a5a6') for c in revenue_by_type['Category']]
+        ))
+        
+        fig.update_layout(
+            title='💰 Revenue by Format',
+            xaxis_title='Revenue (USD)',
+            yaxis_title='',
+            template=VIZ_CONFIG['template'],
+            height=350
         )
         
         return fig

@@ -1453,6 +1453,7 @@ class ResulamDashboard:
         if data is None:
             data = self.royalties
         return dbc.Container([
+            # Total Sales by Book section
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
@@ -1463,12 +1464,123 @@ class ResulamDashboard:
                                     figure=SalesCharts.sales_by_book_horizontal(data),
                                     config={'displayModeBar': False}
                                 )
-                            ], style={"maxHeight": "600px", "overflowY": "auto"})
+                            ], style={"maxHeight": "400px", "overflowY": "auto"})
+                        ])
+                    ], className="shadow-sm mb-4")
+                ])
+            ]),
+            # eBook vs Physical Books Analysis section
+            dbc.Row([
+                dbc.Col([
+                    html.H4("📱 eBook vs 📖 Physical Books Analysis", className="mb-3 mt-2")
+                ])
+            ]),
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardBody([
+                            dcc.Graph(
+                                figure=SalesCharts.ebook_vs_physical_pie(data),
+                                config={'displayModeBar': False}
+                            )
+                        ])
+                    ], className="shadow-sm mb-4")
+                ], md=4),
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardBody([
+                            dcc.Graph(
+                                figure=SalesCharts.ebook_vs_physical_by_year(data),
+                                config={'displayModeBar': False}
+                            )
+                        ])
+                    ], className="shadow-sm mb-4")
+                ], md=4),
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardBody([
+                            dcc.Graph(
+                                figure=SalesCharts.ebook_vs_physical_revenue(data),
+                                config={'displayModeBar': False}
+                            )
+                        ])
+                    ], className="shadow-sm mb-4")
+                ], md=4)
+            ]),
+            # Summary statistics
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader(html.H5("📊 Format Statistics")),
+                        dbc.CardBody([
+                            self._create_format_stats_table(data)
                         ])
                     ], className="shadow-sm mb-4")
                 ])
             ])
         ], fluid=True)
+    
+    def _create_format_stats_table(self, data):
+        """Create statistics table for eBook vs Physical"""
+        if len(data) == 0 or 'BookType' not in data.columns:
+            return html.P("No data available")
+        
+        # Calculate stats
+        ebook_data = data[data['BookType'] == 'Ebook']
+        physical_data = data[data['BookType'].isin(['Paper', 'HardCover'])]
+        paper_data = data[data['BookType'] == 'Paper']
+        hardcover_data = data[data['BookType'] == 'HardCover']
+        
+        ebook_units = ebook_data['Net Units Sold'].sum()
+        physical_units = physical_data['Net Units Sold'].sum()
+        paper_units = paper_data['Net Units Sold'].sum()
+        hardcover_units = hardcover_data['Net Units Sold'].sum()
+        total_units = ebook_units + physical_units
+        
+        ebook_revenue = ebook_data['Royalty USD'].sum()
+        physical_revenue = physical_data['Royalty USD'].sum()
+        paper_revenue = paper_data['Royalty USD'].sum()
+        hardcover_revenue = hardcover_data['Royalty USD'].sum()
+        
+        return dbc.Table([
+            html.Thead(html.Tr([
+                html.Th("Format"),
+                html.Th("Units Sold"),
+                html.Th("% of Sales"),
+                html.Th("Revenue (USD)"),
+                html.Th("Avg Price/Unit")
+            ])),
+            html.Tbody([
+                html.Tr([
+                    html.Td("📱 eBook"),
+                    html.Td(f"{ebook_units:,}"),
+                    html.Td(f"{(ebook_units/total_units*100) if total_units > 0 else 0:.1f}%"),
+                    html.Td(f"${ebook_revenue:,.2f}"),
+                    html.Td(f"${(ebook_revenue/ebook_units) if ebook_units > 0 else 0:.2f}")
+                ]),
+                html.Tr([
+                    html.Td("📖 Paperback"),
+                    html.Td(f"{paper_units:,}"),
+                    html.Td(f"{(paper_units/total_units*100) if total_units > 0 else 0:.1f}%"),
+                    html.Td(f"${paper_revenue:,.2f}"),
+                    html.Td(f"${(paper_revenue/paper_units) if paper_units > 0 else 0:.2f}")
+                ]),
+                html.Tr([
+                    html.Td("📕 Hardcover"),
+                    html.Td(f"{hardcover_units:,}"),
+                    html.Td(f"{(hardcover_units/total_units*100) if total_units > 0 else 0:.1f}%"),
+                    html.Td(f"${hardcover_revenue:,.2f}"),
+                    html.Td(f"${(hardcover_revenue/hardcover_units) if hardcover_units > 0 else 0:.2f}")
+                ]),
+                html.Tr([
+                    html.Td(html.Strong("Total")),
+                    html.Td(html.Strong(f"{total_units:,}")),
+                    html.Td(html.Strong("100%")),
+                    html.Td(html.Strong(f"${ebook_revenue + physical_revenue:,.2f}")),
+                    html.Td("")
+                ], style={"backgroundColor": "#f8f9fa"})
+            ])
+        ], bordered=True, hover=True, striped=True, size="sm")
     
     def _create_authors_tab(self, data=None):
         """Create authors analysis tab content"""

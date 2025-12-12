@@ -87,37 +87,11 @@ TITLE_NORMALIZATION = {
         "Guide de conversation trilingue français-anglais-yemba: French-Yemba-English Phrasebook"
 }
 
-# Book nickname mapping for visualization
-BOOK_NICKNAME_MAPPING = {
-    **{f"Nùfī Attic - Le Grenier du Nùfī - KAM {i}:": "nufi_attic_interactive" for i in range(1, 9)},
-    "Ntǎ' Nùfī - Nùfī Attic - Le Grenier du Nùfī (Version sans audio)": "nufi_attic_ebook",
-    "Conte Africain -Fongbe: « Travaille aujourd'hui et mange demain, paresse aujourd'hui et vole demain » – January 15, 2019": "fongbe_conte_travaille_paresse",
-    "Conte Africain -Fongbe: « Travaille aujourd'hui et mange demain, paresse aujourd'hui et vole demain ».": "fongbe_conte_travaille_paresse",
-    "Guide de conversation trilingue Français-anglais-fe'efe'e.: French-Fè'éfě'è-English Phrasebook": "nufi_phrasebook",
-    "La grammaire des langues bamilekes : cas du nufi": "nufi_grammaire",
-    "La fourmi affamée : Nufi-Français: Nzhìèkǔ' mɑ̀nkō ngʉ́ngà'": "nufi_fourmi_affamee",
-    "Contes africains, contes bamilekés racontés en nufi et traduits en francais (Full Color): African's fairy tales": "nufi_contes_bamilekes",
-    "Conversations de base en langue fe'efe'e: Basic Conversation in Fe'efe'e Language": "nufi_conv.base",
-    "Conte Bamiléké-Nufi « Travaille aujourd'hui et mange demain, paresse aujourd'hui et vole demain ».: Version Nufi-Francais": "nufi_travail_paresse",
-    "Contes africains, contes bamilékés racontés en nufi et traduits en français (Black and White): African's fairy tales": "nufi_contes_bamileke_black_white",
-    "Contes bamilekés racontés en medumba et traduits en français (Black and White): medumba (Bangangte) Fairy tales": "medumba_contes_bamilekes_black_white",
-    "Contes bamilekés racontés en medumba et traduits en français: medumba (bangante) fairy tales": "medumba_contes_bamileke_couleur",
-    "Expressions idiomatiques en langue fè'éfě'è (nùfī): Yū' mfèn pí yū' nkɑ̀ndàk mɑ̀ ghə̀ə̄ fè'éfě'è (nùfī)": "nufi_expression_idiom.",
-    "Grammaire des langues bamilékés : Cas du nufi (fè'éfě'è): Sìēmbʉ́ɑ́ fè'éfě'è": "nufi_grammaire",
-    "Guide de conversation (phrasebook) en langue fe'efe'e (nufi) - part I: Trilingual Phrasebook : French-English-Nufi": "nufi_phrasebook",
-    "Guide de conversation trilingue français-anglais-douala: French-Duala-English Phrasebook": "duala_phrasebook",
-    "Guide de conversation trilingue français-anglais-medumba: French-Medumba-English Phrasebook": "medumba_phrasebook",
-    "Guide de conversation trilingue français-anglais-yemba: French-Yemba-English Phrasebook": "yemba_phrasebook",
-    "La fourmi affamée: Nzhìèkǔ' mɑ̀nkō ngʉ́ngà'": "nufi_fourmi_affamee",
-    "Le Grenier du Nguemba: Ntâŋ Ŋgə̂mbà : Ngemba Attic": "ngemba_grenier",
-    "Syllabaire et dictionnaire visuel en langue nufi (fe'efe'e): Nkǔnjâ'wū pí mbíághəə": "nufi_syllabaire",
-    "Syllabaire et Dictionnaire Visuel en langue fe'efe'e: Nkǔnjâ'wū pí mbíághəə": "nufi_syllabaire",
-    "Yoruba - French - English Phrasebook: Guide de conversation Yoruba – Français - Anglais": "yoruba_phrasebook",
-    "Contes africains, contes bamilekés racontés en nufi et traduits en francais: African's fairy tales, bamileke tales": "nufi_contes_bamilekes",
-    "La fourmi affamée : Ŋgə̂mbà – Français: Tə́ttá pfʉ́ njjikhwu'ú": "ngemba_fourmi_affamee",
-    "NO MORE WESTERN NAMES! For African Kids": "no_more_western_names",
-    "Twi- French - English Phrasebook: Kasa Mmiɛnsa Nkɔmmɔbɔ Akwankyerɛ": "twi_phrasebook",
-}
+# Book nickname mapping for visualization - HARDCODED for stability
+# Import the complete hardcoded mapping
+from src.hardcoded_nicknames import HARDCODED_TITLE_NICKNAMES
+
+BOOK_NICKNAME_MAPPING = HARDCODED_TITLE_NICKNAMES
 
 # Exchange rates (to USD) - HARDCODED FALLBACK
 EXCHANGE_RATES_HARDCODED = {
