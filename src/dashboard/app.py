@@ -10,7 +10,7 @@ import pandas as pd
 import math
 import plotly.graph_objects as go
 
-from ..config import DASHBOARD_CONFIG, CURRENT_YEAR, LAST_YEAR, AUTHOR_NORMALIZATION, NET_REVENUE_PERCENTAGE
+from ..config import DASHBOARD_CONFIG, CURRENT_YEAR, LAST_YEAR, AUTHOR_NORMALIZATION, NET_REVENUE_PERCENTAGE, BOOKS_DATABASE_PATH
 from ..visualization import SalesCharts, AuthorCharts, GeographicCharts, SummaryMetrics
 from ..visualization.earning_history import EarningHistoryCharts
 
@@ -545,6 +545,7 @@ class ResulamDashboard:
             dbc.Tab(label="🧑🏿‍💼 Authors Analysis", tab_id="authors"),
             dbc.Tab(label="📈 Earning History", tab_id="trends"),
             dbc.Tab(label="🌍 Geographic Distribution", tab_id="geography"),
+            dbc.Tab(label="🛒 Purchase the Book", tab_id="purchase"),
         ], id="dashboard-tabs", active_tab="sales", className="mb-4")
         
         # Content area that changes based on selected tab
@@ -1227,6 +1228,8 @@ class ResulamDashboard:
                 return self._create_earning_history_tab(filtered_exploded)
             elif active_tab == "geography":
                 return self._create_geography_tab(filtered_royalties, filter_text)
+            elif active_tab == "purchase":
+                return self._create_purchase_tab(filtered_royalties, selected_language, selected_author, selected_booktype, selected_book)
             
             return html.Div("Select a tab to view content")
         
@@ -1685,6 +1688,94 @@ class ResulamDashboard:
             # Add UTF-8 BOM
             txt_with_bom = '\ufeff' + txt_content
             return dict(content=txt_with_bom, filename="author_earnings_adjusted.txt")
+        
+        # Purchase tab download callbacks
+        @self.app.callback(
+            Output("download-purchase-csv", "data"),
+            Input("download-purchase-csv-btn", "n_clicks"),
+            State("purchase-download-data", "data"),
+            prevent_initial_call=True,
+        )
+        def download_purchase_csv(n_clicks, download_data):
+            """Download filtered books data as CSV"""
+            if not download_data:
+                return None
+            
+            import io
+            df = pd.read_json(io.StringIO(download_data), orient='split')
+            
+            # Create CSV with UTF-8-sig BOM
+            csv_content = df.to_csv(index=False)
+            csv_with_bom = '\ufeff' + csv_content
+            return dict(content=csv_with_bom, filename="resulam_books_purchase_links.csv")
+        
+        @self.app.callback(
+            Output("download-purchase-excel", "data"),
+            Input("download-purchase-excel-btn", "n_clicks"),
+            State("purchase-download-data", "data"),
+            prevent_initial_call=True,
+        )
+        def download_purchase_excel(n_clicks, download_data):
+            """Download filtered books data as Excel"""
+            if not download_data:
+                return None
+            
+            import io
+            df = pd.read_json(io.StringIO(download_data), orient='split')
+            
+            # Create Excel file in memory
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='Books')
+            output.seek(0)
+            
+            return dcc.send_bytes(output.getvalue(), "resulam_books_purchase_links.xlsx")
+        
+        @self.app.callback(
+            Output("download-purchase-txt", "data"),
+            Input("download-purchase-txt-btn", "n_clicks"),
+            State("purchase-download-data", "data"),
+            prevent_initial_call=True,
+        )
+        def download_purchase_txt(n_clicks, download_data):
+            """Download filtered books data as plain text"""
+            if not download_data:
+                return None
+            
+            import io
+            df = pd.read_json(io.StringIO(download_data), orient='split')
+            
+            # Create formatted plain text
+            txt_content = "RESULAM BOOKS - AMAZON PURCHASE LINKS\n"
+            txt_content += "=" * 100 + "\n\n"
+            txt_content += f"Total Books: {len(df)}\n"
+            txt_content += f"Generated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            txt_content += "=" * 100 + "\n\n"
+            
+            for i, row in df.iterrows():
+                txt_content += f"Book #{i+1}\n"
+                txt_content += "-" * 50 + "\n"
+                txt_content += f"Title:    {row['Title']}\n"
+                txt_content += f"Language: {row['Language']}\n"
+                txt_content += f"Authors:  {row['Authors']}\n"
+                txt_content += f"Book ID:  {row['Book ID']}\n"
+                txt_content += "\nPurchase Links:\n"
+                
+                if pd.notna(row['Paperback Link']) and row['Paperback Link']:
+                    txt_content += f"  📖 Paperback: {row['Paperback Link']}\n"
+                if pd.notna(row['eBook Link']) and row['eBook Link']:
+                    txt_content += f"  📱 eBook:     {row['eBook Link']}\n"
+                if pd.notna(row['Hardcover Link']) and row['Hardcover Link']:
+                    txt_content += f"  📚 Hardcover: {row['Hardcover Link']}\n"
+                
+                txt_content += "\n"
+            
+            txt_content += "=" * 100 + "\n"
+            txt_content += "End of Report\n"
+            
+            # Add UTF-8 BOM
+            txt_with_bom = '\ufeff' + txt_content
+            return dict(content=txt_with_bom, filename="resulam_books_purchase_links.txt")
     
     def _create_sales_tab(self, data=None, selected_years=None, selected_language=None):
         """Create sales overview tab content"""
@@ -2097,6 +2188,295 @@ class ResulamDashboard:
                     ], className="shadow-sm mb-4")
                 ], md=6)
             ])
+        ], fluid=True)
+    
+    def _create_purchase_tab(self, data=None, selected_language=None, selected_author=None, selected_booktype=None, selected_book=None):
+        """Create purchase the book tab content with Amazon links"""
+        import unicodedata
+        
+        def normalize_text(text):
+            """Remove accents and normalize text for comparison"""
+            if pd.isna(text) or not text:
+                return ""
+            # Normalize unicode and remove accents
+            normalized = unicodedata.normalize('NFD', str(text))
+            return ''.join(c for c in normalized if unicodedata.category(c) != 'Mn').lower()
+        
+        try:
+            # Load the books database
+            books_df = pd.read_csv(BOOKS_DATABASE_PATH)
+        except Exception as e:
+            return dbc.Container([
+                dbc.Alert(f"Unable to load books database: {str(e)}", color="warning")
+            ], fluid=True)
+        
+        # Start with all books - don't filter by royalties data
+        filtered_books = books_df.copy()
+        
+        # Apply language filter if selected
+        if selected_language and selected_language != "all":
+            lang_filtered = filtered_books[filtered_books['language_name'].str.lower() == selected_language.lower()]
+            if len(lang_filtered) > 0:
+                filtered_books = lang_filtered
+        
+        # Apply author filter if selected
+        if selected_author and selected_author != "all":
+            # Use fuzzy matching with accent normalization
+            # This handles variations like "Joséphine" vs "Josephine" and name order variations
+            author_parts = [normalize_text(p) for p in selected_author.split() if len(p.strip()) > 2]
+            
+            def author_matches(book_authors):
+                if pd.isna(book_authors) or not book_authors:
+                    return False
+                book_authors_normalized = normalize_text(book_authors)
+                # Check if at least 2 significant parts match (for names like "Claude Lionel Mvondo Edzoa")
+                # Or all parts for shorter names
+                min_matches = min(2, len(author_parts))
+                matches = sum(1 for part in author_parts if part in book_authors_normalized)
+                return matches >= min_matches
+            
+            author_filtered = filtered_books[filtered_books['authors'].apply(author_matches)]
+            if len(author_filtered) > 0:
+                filtered_books = author_filtered
+        
+        # Apply book filter if selected (by nickname)
+        # Use flexible matching since nicknames differ between royalties data and books database
+        if selected_book and selected_book != "all":
+            selected_book_normalized = normalize_text(selected_book).replace('_', ' ')
+            
+            def book_matches(book_nickname):
+                if pd.isna(book_nickname) or not book_nickname:
+                    return False
+                book_nickname_normalized = normalize_text(book_nickname).replace('_', ' ')
+                # Check for exact match first
+                if book_nickname_normalized == selected_book_normalized:
+                    return True
+                # Check if one contains the other (handles partial matches)
+                if selected_book_normalized in book_nickname_normalized or book_nickname_normalized in selected_book_normalized:
+                    return True
+                # Check word overlap - if most words match
+                selected_words = set(selected_book_normalized.split())
+                book_words = set(book_nickname_normalized.split())
+                common = selected_words & book_words
+                # At least 2 significant words match
+                return len(common) >= 2
+            
+            book_filtered = filtered_books[filtered_books['book_nick_name'].apply(book_matches)]
+            if len(book_filtered) > 0:
+                filtered_books = book_filtered
+        
+        # Apply book type filter if selected (show books that have that format available)
+        if selected_booktype and selected_booktype != "all":
+            if selected_booktype == "Ebook":
+                booktype_filtered = filtered_books[filtered_books['ebook'].notna() & (filtered_books['ebook'] != '')]
+            elif selected_booktype == "Paper":
+                booktype_filtered = filtered_books[filtered_books['paperback'].notna() & (filtered_books['paperback'] != '')]
+            elif selected_booktype == "HardCover":
+                booktype_filtered = filtered_books[filtered_books['hard_cover'].notna() & (filtered_books['hard_cover'] != '')]
+            else:
+                booktype_filtered = filtered_books
+            if len(booktype_filtered) > 0:
+                filtered_books = booktype_filtered
+        
+        if len(filtered_books) == 0:
+            return dbc.Container([
+                dbc.Alert("No books found matching your filters.", color="info")
+            ], fluid=True)
+        
+        # Determine if we're using S3 (online) or local assets
+        import os
+        use_s3_images = os.getenv('USE_S3_DATA', 'false').lower() == 'true'
+        s3_base_url = "https://resulam-images.s3.amazonaws.com/ResulamBookCoversQRCode_Compressed"
+        
+        # Build a mapping of book covers (book_id -> image_url)
+        available_covers = {}
+        
+        if use_s3_images:
+            # Online version - fetch list of available covers from S3
+            try:
+                import boto3
+                s3 = boto3.client('s3')
+                resp = s3.list_objects_v2(
+                    Bucket='resulam-images', 
+                    Prefix='ResulamBookCoversQRCode_Compressed/Book'
+                )
+                for obj in resp.get('Contents', []):
+                    key = obj['Key']
+                    filename = key.split('/')[-1]  # e.g., "Book1__nufi_contes....PNG"
+                    if filename.lower().startswith('book'):
+                        # Extract book number from filename
+                        name_part = filename[4:]  # After "Book"
+                        parts = name_part.split('_', 1)
+                        if parts:
+                            num_str = parts[0].strip('_')
+                            if num_str.isdigit():
+                                book_num = int(num_str)
+                                # Use the exact S3 key for the URL
+                                from urllib.parse import quote
+                                available_covers[book_num] = f"{s3_base_url}/{quote(filename, safe='')}"
+            except Exception as e:
+                print(f"Warning: Could not fetch S3 cover list: {e}")
+        else:
+            # Local version - scan assets/book_covers folder
+            book_covers_path = Path(__file__).parent.parent.parent / 'assets' / 'book_covers'
+            if book_covers_path.exists():
+                for img_file in book_covers_path.glob('book*.*'):
+                    # Extract book number from filename like "book1_nickname.png"
+                    name = img_file.stem.lower()  # e.g., "book1_nufi_contes..."
+                    if name.startswith('book'):
+                        # Extract the book number (handle both book1_ and book1__ patterns)
+                        parts = name[4:].split('_', 1)  # After "book"
+                        if parts:
+                            # Handle patterns like "book1__" or "book1_"
+                            num_str = parts[0].strip('_')
+                            if num_str.isdigit():
+                                book_num = int(num_str)
+                                # Store with relative path for web serving
+                                available_covers[book_num] = f"assets/book_covers/{img_file.name}"
+        
+        # Create book cards
+        book_cards = []
+        for _, book in filtered_books.iterrows():
+            title = book.get('title', 'Unknown Title')
+            # Clean title by removing date suffix
+            if ' – ' in str(title):
+                title = str(title).split(' – ')[0].strip()
+            
+            language = book.get('language_name', 'Unknown')
+            authors = book.get('authors', 'Unknown')
+            book_id = book.get('id', 0)
+            
+            # Get book cover image from pre-built mapping
+            cover_image = available_covers.get(book_id, None)
+            
+            # Get links
+            paperback_link = book.get('paperback', '')
+            ebook_link = book.get('ebook', '')
+            hardcover_link = book.get('hard_cover', '')
+            
+            # Create link buttons
+            link_buttons = []
+            if pd.notna(paperback_link) and paperback_link:
+                link_buttons.append(
+                    dbc.Button(
+                        [html.I(className="fas fa-book me-2"), "📖 Paperback"],
+                        href=paperback_link,
+                        target="_blank",
+                        color="primary",
+                        size="sm",
+                        className="me-2 mb-2"
+                    )
+                )
+            if pd.notna(ebook_link) and ebook_link:
+                link_buttons.append(
+                    dbc.Button(
+                        [html.I(className="fas fa-tablet-alt me-2"), "📱 eBook"],
+                        href=ebook_link,
+                        target="_blank",
+                        color="success",
+                        size="sm",
+                        className="me-2 mb-2"
+                    )
+                )
+            if pd.notna(hardcover_link) and hardcover_link:
+                link_buttons.append(
+                    dbc.Button(
+                        [html.I(className="fas fa-book-open me-2"), "📚 Hardcover"],
+                        href=hardcover_link,
+                        target="_blank",
+                        color="warning",
+                        size="sm",
+                        className="me-2 mb-2"
+                    )
+                )
+            
+            if not link_buttons:
+                link_buttons.append(html.Span("No purchase links available", className="text-muted"))
+            
+            # Determine the best link for the cover image (prefer paperback, then ebook, then hardcover)
+            image_link = None
+            if pd.notna(paperback_link) and paperback_link:
+                image_link = paperback_link
+            elif pd.notna(ebook_link) and ebook_link:
+                image_link = ebook_link
+            elif pd.notna(hardcover_link) and hardcover_link:
+                image_link = hardcover_link
+            
+            # Build card with or without cover image
+            card_children = []
+            
+            # Add cover image if available (make it clickable)
+            if cover_image:
+                cover_img = dbc.CardImg(
+                    src=cover_image,
+                    top=True,
+                    style={"height": "250px", "objectFit": "contain", "backgroundColor": "#f8f9fa", "cursor": "pointer" if image_link else "default"}
+                )
+                # Wrap image in a link if we have a purchase link
+                if image_link:
+                    card_children.append(
+                        html.A(cover_img, href=image_link, target="_blank")
+                    )
+                else:
+                    card_children.append(cover_img)
+            
+            # Add card body
+            card_children.append(
+                dbc.CardBody([
+                    html.H6(title[:70] + "..." if len(str(title)) > 70 else title, className="card-title", style={"fontSize": "0.9rem", "fontWeight": "600"}),
+                    html.P([
+                        html.Span(f"🌐 {language}", className="me-2"),
+                        html.Br(),
+                        html.Span(f"✍️ {authors}", style={"fontSize": "0.8rem"})
+                    ], className="card-text text-muted small mb-2"),
+                    html.Div(link_buttons, className="mt-auto")
+                ], className="d-flex flex-column")
+            )
+            
+            card = dbc.Card(card_children, className="shadow-sm mb-3 h-100")
+            
+            book_cards.append(dbc.Col(card, xs=12, sm=6, md=4, lg=3, className="mb-3"))
+        
+        # Build filter summary
+        filter_parts = []
+        if selected_language and selected_language != "all":
+            filter_parts.append(f"Language: {selected_language}")
+        if selected_author and selected_author != "all":
+            filter_parts.append(f"Author: {selected_author}")
+        if selected_booktype and selected_booktype != "all":
+            format_labels = {"Ebook": "📱 eBook", "Paper": "📖 Paperback", "HardCover": "📚 Hardcover"}
+            filter_parts.append(f"Format: {format_labels.get(selected_booktype, selected_booktype)}")
+        if selected_book and selected_book != "all":
+            filter_parts.append(f"Book: {selected_book}")
+        filter_text = " | ".join(filter_parts) if filter_parts else "All Books"
+        
+        # Prepare download data - clean columns for export
+        download_df = filtered_books[['title', 'language_name', 'authors', 'book_nick_name', 'paperback', 'ebook', 'hard_cover']].copy()
+        download_df.columns = ['Title', 'Language', 'Authors', 'Book ID', 'Paperback Link', 'eBook Link', 'Hardcover Link']
+        # Clean title by removing date suffix
+        download_df['Title'] = download_df['Title'].apply(lambda x: str(x).split(' – ')[0].strip() if ' – ' in str(x) else x)
+        
+        # Store the filtered data in a hidden div for download callbacks
+        download_data_json = download_df.to_json(date_format='iso', orient='split')
+        
+        return dbc.Container([
+            # Hidden store for download data
+            dcc.Store(id='purchase-download-data', data=download_data_json),
+            dbc.Row([
+                dbc.Col([
+                    html.H3(f"🛒 Purchase Our Books on Amazon ({filter_text})", className="mb-3"),
+                    html.Div([
+                        html.Span(f"Showing {len(filtered_books)} books. Click on the format to purchase.", className="text-muted me-4"),
+                        dbc.Button("📥 CSV", id="download-purchase-csv-btn", color="info", size="sm", className="me-2"),
+                        dbc.Button("📥 Excel", id="download-purchase-excel-btn", color="success", size="sm", className="me-2"),
+                        dbc.Button("📥 Text", id="download-purchase-txt-btn", color="secondary", size="sm"),
+                    ], className="mb-4 d-flex align-items-center"),
+                    dcc.Download(id="download-purchase-csv"),
+                    dcc.Download(id="download-purchase-excel"),
+                    dcc.Download(id="download-purchase-txt"),
+                ])
+            ]),
+            dbc.Row(book_cards)
         ], fluid=True)
         
         # Theme toggle with proper theme switching
