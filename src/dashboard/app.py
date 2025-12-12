@@ -1889,7 +1889,7 @@ class ResulamDashboard:
             download_data = json.loads(download_data_str)
             df = pd.read_json(io.StringIO(download_data['data']), orient='split')
             filter_text = download_data.get('filter_text', 'All Books')
-            filter_info = download_data.get('filter_info', {})
+            filter_info = download_data.get('filters', {})
             
             # Build detailed title with filter info
             title_parts = ["RESULAM BOOKS - AMAZON PURCHASE LINKS"]
