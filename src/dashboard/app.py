@@ -313,6 +313,12 @@ class ResulamDashboard:
         # Get unique authors for author filter
         all_authors_for_filter = get_unique_authors(self.royalties_exploded['Authors_Exploded'])
         
+        # Get unique book types for book type filter
+        all_book_types = sorted(self.royalties['BookType'].dropna().unique().tolist())
+        
+        # Get unique book nicknames for book filter
+        all_book_nicknames = sorted(self.royalties['book_nick_name'].dropna().unique().tolist())
+        
         filter_section = dbc.Container([
             dbc.Row([
                 dbc.Col([
@@ -328,7 +334,7 @@ class ResulamDashboard:
                         style={"width": "100%"}
                     ),
                     dcc.Store(id="year-filter-store", data=[CURRENT_YEAR])  # Store current year by default
-                ], md=4),
+                ], md=2),
                 dbc.Col([
                     dbc.Label("Filter by Language:", className="fw-bold"),
                     dcc.Dropdown(
@@ -342,7 +348,7 @@ class ResulamDashboard:
                         clearable=False,
                         style={"width": "100%"}
                     )
-                ], md=4),
+                ], md=2),
                 dbc.Col([
                     dbc.Label("Filter by Author:", className="fw-bold"),
                     dcc.Dropdown(
@@ -356,7 +362,47 @@ class ResulamDashboard:
                         clearable=False,
                         style={"width": "100%"}
                     )
-                ], md=4)
+                ], md=2),
+                dbc.Col([
+                    dbc.Label("Filter by Book Type:", className="fw-bold"),
+                    dcc.Dropdown(
+                        id="booktype-filter",
+                        options=[{"label": "All Types", "value": "all"}] + [
+                            {"label": "📱 eBook" if bt == "Ebook" else "📖 Paperback" if bt == "Paper" else "📚 Hardcover" if bt == "HardCover" else bt, "value": bt} for bt in all_book_types
+                        ],
+                        value="all",
+                        multi=False,
+                        searchable=True,
+                        clearable=False,
+                        style={"width": "100%"}
+                    )
+                ], md=2),
+                dbc.Col([
+                    dbc.Label("Filter by Book:", className="fw-bold"),
+                    dcc.Dropdown(
+                        id="book-filter",
+                        options=[{"label": "All Books", "value": "all"}] + [
+                            {"label": nickname, "value": nickname} for nickname in all_book_nicknames
+                        ],
+                        value="all",
+                        multi=False,
+                        searchable=True,
+                        clearable=False,
+                        style={"width": "100%"},
+                        placeholder="Search for a book..."
+                    )
+                ], md=3),
+                dbc.Col([
+                    html.Div([
+                        dbc.Button(
+                            "🔄 Reset",
+                            id="reset-all-filters",
+                            color="danger",
+                            className="w-100",
+                            style={"fontWeight": "bold", "fontSize": "14px"}
+                        )
+                    ], style={"marginTop": "32px"})  # Align with dropdowns by adding top margin
+                ], md=1)
             ], className="mb-3")
         ], fluid=True, className="py-3 mb-4")
         
@@ -610,33 +656,174 @@ class ResulamDashboard:
             return False
 
         # Callback to update filter options when data is refreshed
+        # Helper function to filter data based on current selections
+        def _get_filtered_data(selected_years=None, selected_language=None, selected_author=None, 
+                               selected_booktype=None, selected_book=None):
+            """Get filtered data based on current filter selections"""
+            df = self.royalties.copy()
+            df_exploded = self.royalties_exploded.copy()
+            
+            if selected_years and selected_years != "lifetime":
+                if isinstance(selected_years, list):
+                    df = df[df['Year Sold'].isin(selected_years)]
+                    df_exploded = df_exploded[df_exploded['Year Sold'].isin(selected_years)]
+            
+            if selected_language and selected_language != "all":
+                df = df[df['Language'] == selected_language]
+                df_exploded = df_exploded[df_exploded['Language'] == selected_language]
+            
+            if selected_author and selected_author != "all":
+                df = filter_by_author(df, selected_author, 'Authors')
+                df_exploded = df_exploded[df_exploded['Authors_Exploded'].apply(lambda x: normalize_author_name(x)) == selected_author]
+            
+            if selected_booktype and selected_booktype != "all":
+                df = df[df['BookType'] == selected_booktype]
+                df_exploded = df_exploded[df_exploded['BookType'] == selected_booktype]
+            
+            if selected_book and selected_book != "all":
+                df = df[df['book_nick_name'] == selected_book]
+                df_exploded = df_exploded[df_exploded['book_nick_name'] == selected_book]
+            
+            return df, df_exploded
+
+        # Cascading filter callbacks - update options based on other filter selections
+        @self.app.callback(
+            Output("language-filter", "options"),
+            Input("year-filter", "value"),
+            Input("author-filter", "value"),
+            Input("booktype-filter", "value"),
+            Input("book-filter", "value"),
+            Input("data-refresh-signal", "data"),
+            prevent_initial_call=False
+        )
+        def update_language_options(selected_year, selected_author, selected_booktype, selected_book, refresh_signal):
+            """Update language filter options based on other filters"""
+            # Convert year selection to list for filtering
+            if selected_year == "lifetime" or not selected_year:
+                years = None
+            elif isinstance(selected_year, int):
+                years = [selected_year]
+            else:
+                years = selected_year
+            
+            df, _ = _get_filtered_data(years, None, selected_author, selected_booktype, selected_book)
+            available_languages = sorted(df['Language'].dropna().unique().tolist())
+            
+            return [{"label": "All Languages", "value": "all"}] + [
+                {"label": lang, "value": lang} for lang in available_languages
+            ]
+
+        @self.app.callback(
+            Output("author-filter", "options"),
+            Input("year-filter", "value"),
+            Input("language-filter", "value"),
+            Input("booktype-filter", "value"),
+            Input("book-filter", "value"),
+            Input("data-refresh-signal", "data"),
+            prevent_initial_call=False
+        )
+        def update_author_options(selected_year, selected_language, selected_booktype, selected_book, refresh_signal):
+            """Update author filter options based on other filters"""
+            if selected_year == "lifetime" or not selected_year:
+                years = None
+            elif isinstance(selected_year, int):
+                years = [selected_year]
+            else:
+                years = selected_year
+            
+            _, df_exploded = _get_filtered_data(years, selected_language, None, selected_booktype, selected_book)
+            available_authors = get_unique_authors(df_exploded['Authors_Exploded'])
+            
+            return [{"label": "All Authors", "value": "all"}] + [
+                {"label": author, "value": author} for author in available_authors
+            ]
+
+        @self.app.callback(
+            Output("booktype-filter", "options"),
+            Input("year-filter", "value"),
+            Input("language-filter", "value"),
+            Input("author-filter", "value"),
+            Input("book-filter", "value"),
+            Input("data-refresh-signal", "data"),
+            prevent_initial_call=False
+        )
+        def update_booktype_options(selected_year, selected_language, selected_author, selected_book, refresh_signal):
+            """Update book type filter options based on other filters"""
+            if selected_year == "lifetime" or not selected_year:
+                years = None
+            elif isinstance(selected_year, int):
+                years = [selected_year]
+            else:
+                years = selected_year
+            
+            df, _ = _get_filtered_data(years, selected_language, selected_author, None, selected_book)
+            available_types = sorted(df['BookType'].dropna().unique().tolist())
+            
+            type_labels = {"Ebook": "📱 eBook", "Paper": "📖 Paperback", "HardCover": "📚 Hardcover"}
+            return [{"label": "All Types", "value": "all"}] + [
+                {"label": type_labels.get(bt, bt), "value": bt} for bt in available_types
+            ]
+
+        @self.app.callback(
+            Output("book-filter", "options"),
+            Input("year-filter", "value"),
+            Input("language-filter", "value"),
+            Input("author-filter", "value"),
+            Input("booktype-filter", "value"),
+            Input("data-refresh-signal", "data"),
+            prevent_initial_call=False
+        )
+        def update_book_options(selected_year, selected_language, selected_author, selected_booktype, refresh_signal):
+            """Update book filter options based on other filters"""
+            if selected_year == "lifetime" or not selected_year:
+                years = None
+            elif isinstance(selected_year, int):
+                years = [selected_year]
+            else:
+                years = selected_year
+            
+            df, _ = _get_filtered_data(years, selected_language, selected_author, selected_booktype, None)
+            available_books = sorted(df['book_nick_name'].dropna().unique().tolist())
+            
+            return [{"label": "All Books", "value": "all"}] + [
+                {"label": book, "value": book} for book in available_books
+            ]
+
+        @self.app.callback(
+            Output("year-filter", "value"),
+            Output("language-filter", "value"),
+            Output("author-filter", "value"),
+            Output("booktype-filter", "value"),
+            Output("book-filter", "value"),
+            Input("reset-all-filters", "n_clicks"),
+            prevent_initial_call=True
+        )
+        def reset_all_filters(n_clicks):
+            """Reset all filters to their default values"""
+            return CURRENT_YEAR, "all", "all", "all", "all"
+
         @self.app.callback(
             Output("year-filter", "options"),
-            Output("language-filter", "options"),
             Output("sales-language-display-mode", "options"),
             Input("data-refresh-signal", "data"),
             prevent_initial_call=True
         )
-        def update_filter_options(refresh_signal):
-            """Update filter options when new data is available"""
+        def update_year_and_display_options(refresh_signal):
+            """Update year filter and display mode options when new data is available"""
             # Get updated years
             years_reversed = sorted(self.available_years, reverse=True)
             year_options = [{"label": "Life time", "value": "lifetime"}] + \
                            [{"label": str(year), "value": year} for year in years_reversed]
             
-            # Get updated languages
+            # Get updated languages for display mode
             all_languages = sorted(self.royalties['Language'].unique().tolist())
-            language_options = [{"label": "All Languages", "value": "all"}] + \
-                               [{"label": lang, "value": lang} for lang in all_languages]
-            
-            # Get updated display mode options
             display_mode_options = (
                 [{"label": "All (Stacked)", "value": "all_stacked"},
                  {"label": "All (Grouped)", "value": "all_grouped"}] +
                 [{"label": lang, "value": f"language::{lang}"} for lang in all_languages]
             )
             
-            return year_options, language_options, display_mode_options
+            return year_options, display_mode_options
 
         # Callback to update the year-filter-store when a year is selected
         @self.app.callback(
@@ -679,11 +866,13 @@ class ResulamDashboard:
             Input("year-filter-store", "data"),
             Input("language-filter", "value"),
             Input("author-filter", "value"),
+            Input("booktype-filter", "value"),
+            Input("book-filter", "value"),
             Input("data-refresh-signal", "data"),
             prevent_initial_call=False
         )
-        def update_metrics(selected_years, selected_language, selected_author, refresh_signal):
-            """Update metrics based on selected years, language, and author"""
+        def update_metrics(selected_years, selected_language, selected_author, selected_booktype, selected_book, refresh_signal):
+            """Update metrics based on selected years, language, author, book type, and book"""
             # refresh_signal is just a trigger to ensure metrics update when data changes
             
             if not selected_years:  # If no years selected, show all
@@ -702,6 +891,16 @@ class ResulamDashboard:
             if selected_author and selected_author != "all":
                 filtered_df = filter_by_author(filtered_df, selected_author, 'Authors')
                 filtered_exploded = filtered_exploded[filtered_exploded['Authors_Exploded'].apply(lambda x: normalize_author_name(x)) == selected_author]
+            
+            # Apply book type filter
+            if selected_booktype and selected_booktype != "all":
+                filtered_df = filtered_df[filtered_df['BookType'] == selected_booktype]
+                filtered_exploded = filtered_exploded[filtered_exploded['BookType'] == selected_booktype]
+            
+            # Apply book filter
+            if selected_book and selected_book != "all":
+                filtered_df = filtered_df[filtered_df['book_nick_name'] == selected_book]
+                filtered_exploded = filtered_exploded[filtered_exploded['book_nick_name'] == selected_book]
             
             metrics = SummaryMetrics.calculate_metrics(filtered_df, filtered_exploded)
             
@@ -725,10 +924,12 @@ class ResulamDashboard:
             Input("year-filter-store", "data"),
             Input("language-filter", "value"),
             Input("author-filter", "value"),
+            Input("booktype-filter", "value"),
+            Input("book-filter", "value"),
             Input("data-refresh-signal", "data"),
             prevent_initial_call=False
         )
-        def update_sales_trend(selected_years, selected_language, selected_author, refresh_signal):
+        def update_sales_trend(selected_years, selected_language, selected_author, selected_booktype, selected_book, refresh_signal):
             """Update sales trend chart with dynamic title"""
             trend_data = self.royalties
             filter_parts = []
@@ -740,6 +941,14 @@ class ResulamDashboard:
             if selected_author and selected_author != "all":
                 trend_data = filter_by_author(trend_data, selected_author, 'Authors')
                 filter_parts.append(selected_author)
+            
+            if selected_booktype and selected_booktype != "all":
+                trend_data = trend_data[trend_data['BookType'] == selected_booktype]
+                filter_parts.append("📱 eBook" if selected_booktype == "Ebook" else "📖 Physical")
+            
+            if selected_book and selected_book != "all":
+                trend_data = trend_data[trend_data['book_nick_name'] == selected_book]
+                filter_parts.append(selected_book)
             
             total_books = trend_data['Net Units Sold'].sum()
             filter_text = " | ".join(filter_parts) if filter_parts else "All"
@@ -754,11 +963,13 @@ class ResulamDashboard:
             Input("year-filter-store", "data"),
             Input("language-filter", "value"),
             Input("author-filter", "value"),
+            Input("booktype-filter", "value"),
+            Input("book-filter", "value"),
             Input("sales-language-display-mode", "value"),
             Input("data-refresh-signal", "data"),
             prevent_initial_call=False
         )
-        def update_sales_by_language(selected_years, selected_language, selected_author, display_mode, refresh_signal):
+        def update_sales_by_language(selected_years, selected_language, selected_author, selected_booktype, selected_book, display_mode, refresh_signal):
             """Update sales by language stacked chart by year"""
             if not selected_years:
                 filtered_df = self.royalties
@@ -773,6 +984,14 @@ class ResulamDashboard:
             if selected_author and selected_author != "all":
                 filtered_df = filter_by_author(filtered_df, selected_author, 'Authors')
             
+            # Apply book type filter
+            if selected_booktype and selected_booktype != "all":
+                filtered_df = filtered_df[filtered_df['BookType'] == selected_booktype]
+            
+            # Apply book filter
+            if selected_book and selected_book != "all":
+                filtered_df = filtered_df[filtered_df['book_nick_name'] == selected_book]
+            
             # Build filter text for title
             filter_parts = []
             if selected_years and len(selected_years) == 1:
@@ -783,6 +1002,10 @@ class ResulamDashboard:
                 filter_parts.append(selected_language)
             if selected_author and selected_author != "all":
                 filter_parts.append(selected_author)
+            if selected_booktype and selected_booktype != "all":
+                filter_parts.append("📱 eBook" if selected_booktype == "Ebook" else "📖 Physical")
+            if selected_book and selected_book != "all":
+                filter_parts.append(selected_book)
             filter_text = " | ".join(filter_parts) if filter_parts else ""
             
             if len(filtered_df) == 0:
@@ -842,9 +1065,11 @@ class ResulamDashboard:
             Input("year-filter-store", "data"),
             Input("language-filter", "value"),
             Input("author-filter", "value"),
+            Input("booktype-filter", "value"),
+            Input("book-filter", "value"),
             prevent_initial_call=False
         )
-        def update_returns_by_language(selected_years, selected_language, selected_author):
+        def update_returns_by_language(selected_years, selected_language, selected_author, selected_booktype, selected_book):
             """Update returns by book (nickname) chart - only show books with returns"""
             if not selected_years:
                 filtered_df = self.royalties
@@ -866,6 +1091,16 @@ class ResulamDashboard:
                 # Filter by author using proper normalization
                 filtered_df = filter_by_author(filtered_df, selected_author, 'Authors')
                 period_text += f" | {selected_author}"
+            
+            # Apply book type filter
+            if selected_booktype and selected_booktype != "all":
+                filtered_df = filtered_df[filtered_df['BookType'] == selected_booktype]
+                period_text += f" | {'📱 eBook' if selected_booktype == 'Ebook' else '📖 Physical'}"
+            
+            # Apply book filter
+            if selected_book and selected_book != "all":
+                filtered_df = filtered_df[filtered_df['book_nick_name'] == selected_book]
+                period_text += f" | {selected_book}"
             
             # Handle empty filtered data or missing columns
             if len(filtered_df) == 0 or 'Units Refunded' not in filtered_df.columns:
@@ -929,10 +1164,12 @@ class ResulamDashboard:
             Input("year-filter-store", "data"),
             Input("language-filter", "value"),
             Input("author-filter", "value"),
+            Input("booktype-filter", "value"),
+            Input("book-filter", "value"),
             prevent_initial_call=False
         )
-        def render_tab_content(active_tab, selected_years, selected_language, selected_author):
-            """Render content based on active tab, years, language, and author filter"""
+        def render_tab_content(active_tab, selected_years, selected_language, selected_author, selected_booktype, selected_book):
+            """Render content based on active tab, years, language, author, book type, and book filter"""
             
             # Filter data based on selected years
             if not selected_years:
@@ -952,6 +1189,16 @@ class ResulamDashboard:
                 filtered_royalties = filter_by_author(filtered_royalties, selected_author, 'Authors')
                 filtered_exploded = filtered_exploded[filtered_exploded['Authors_Exploded'].apply(lambda x: normalize_author_name(x)) == selected_author]
             
+            # Filter by book type if selected
+            if selected_booktype and selected_booktype != "all":
+                filtered_royalties = filtered_royalties[filtered_royalties['BookType'] == selected_booktype]
+                filtered_exploded = filtered_exploded[filtered_exploded['BookType'] == selected_booktype]
+            
+            # Filter by book if selected
+            if selected_book and selected_book != "all":
+                filtered_royalties = filtered_royalties[filtered_royalties['book_nick_name'] == selected_book]
+                filtered_exploded = filtered_exploded[filtered_exploded['book_nick_name'] == selected_book]
+            
             # Build filter text for dynamic titles
             filter_parts = []
             if selected_years and len(selected_years) == 1:
@@ -964,6 +1211,10 @@ class ResulamDashboard:
                 filter_parts.append(selected_language)
             if selected_author and selected_author != "all":
                 filter_parts.append(selected_author)
+            if selected_booktype and selected_booktype != "all":
+                filter_parts.append("📱 eBook" if selected_booktype == "Ebook" else "📖 Physical")
+            if selected_book and selected_book != "all":
+                filter_parts.append(selected_book)
             filter_text = " | ".join(filter_parts)
             
             if active_tab == "sales":
@@ -1897,10 +2148,12 @@ class ResulamDashboard:
             Output("returns-table-content", "children"),
             Input("year-filter-store", "data"),
             Input("language-filter", "value"),
+            Input("booktype-filter", "value"),
+            Input("book-filter", "value"),
             Input("data-refresh-signal", "data"),
             prevent_initial_call=False
         )
-        def update_returns_table(selected_years, selected_language, refresh_signal):
+        def update_returns_table(selected_years, selected_language, selected_booktype, selected_book, refresh_signal):
             """Show books with refunds"""
             if not selected_years:
                 filtered_df = self.royalties
@@ -1909,6 +2162,12 @@ class ResulamDashboard:
             
             if selected_language and selected_language != "all":
                 filtered_df = filtered_df[filtered_df['Language'] == selected_language]
+            
+            if selected_booktype and selected_booktype != "all":
+                filtered_df = filtered_df[filtered_df['BookType'] == selected_booktype]
+            
+            if selected_book and selected_book != "all":
+                filtered_df = filtered_df[filtered_df['book_nick_name'] == selected_book]
             
             # Get books with refunds - use book_nick_name (nickname) instead of full Title
             returns_df = filtered_df[filtered_df['Units Refunded'] > 0][['book_nick_name', 'Units Sold', 'Units Refunded', 'Marketplace', 'Royalty Date']].copy()
