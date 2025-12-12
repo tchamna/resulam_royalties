@@ -460,13 +460,16 @@ class SalesCharts:
             x=revenue_by_type['Royalty USD'],
             orientation='h',
             text=revenue_by_type['Royalty USD'].apply(lambda x: f'${x:,.2f}'),
-            textposition='outside',
+            textposition='auto',
+            textfont=dict(color='white', size=14),
             marker_color=[colors.get(c, '#95a5a6') for c in revenue_by_type['Category']]
         ))
         
+        max_val = revenue_by_type['Royalty USD'].max()
         fig.update_layout(
             title='💰 Revenue by Format',
             xaxis_title='Revenue (USD)',
+            xaxis=dict(range=[0, max_val * 1.15]),  # Add 15% margin for labels
             yaxis_title='',
             template=VIZ_CONFIG['template'],
             height=350
