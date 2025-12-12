@@ -683,7 +683,7 @@ class ResulamDashboard:
         # Callback to update filter options when data is refreshed
         # Helper function to filter data based on current selections
         def _get_filtered_data(selected_years=None, selected_language=None, selected_author=None, 
-                               selected_booktype=None, selected_book=None):
+                               selected_booktype=None, selected_book=None, selected_category=None):
             """Get filtered data based on current filter selections"""
             df = self.royalties.copy()
             df_exploded = self.royalties_exploded.copy()
@@ -692,6 +692,29 @@ class ResulamDashboard:
                 if isinstance(selected_years, list):
                     df = df[df['Year Sold'].isin(selected_years)]
                     df_exploded = df_exploded[df_exploded['Year Sold'].isin(selected_years)]
+            
+            # Apply category filter first (if applicable)
+            if selected_category and selected_category != "all":
+                books_df = pd.read_csv(BOOKS_DATABASE_PATH)
+                category_books = books_df[books_df['category'] == selected_category]
+                
+                from src.hardcoded_nicknames import DB_NICKNAME_TO_ROYALTY
+                category_nicknames = set()
+                
+                # Get all database nicknames for this category
+                db_nicknames = category_books['book_nick_name'].dropna().tolist()
+                
+                for db_nick in db_nicknames:
+                    # First, check if this DB nickname maps to royalty nicknames
+                    if db_nick in DB_NICKNAME_TO_ROYALTY:
+                        category_nicknames.update(DB_NICKNAME_TO_ROYALTY[db_nick])
+                    else:
+                        # Add the DB nickname itself (might match directly)
+                        category_nicknames.add(db_nick)
+                
+                if category_nicknames:
+                    df = df[df['book_nick_name'].isin(category_nicknames)]
+                    df_exploded = df_exploded[df_exploded['book_nick_name'].isin(category_nicknames)]
             
             if selected_language and selected_language != "all":
                 df = df[df['Language'] == selected_language]
@@ -711,17 +734,17 @@ class ResulamDashboard:
             
             return df, df_exploded
 
-        # Cascading filter callbacks - update options based on other filter selections
         @self.app.callback(
             Output("language-filter", "options"),
             Input("year-filter", "value"),
+            Input("category-filter", "value"),
             Input("author-filter", "value"),
             Input("booktype-filter", "value"),
             Input("book-filter", "value"),
             Input("data-refresh-signal", "data"),
             prevent_initial_call=False
         )
-        def update_language_options(selected_year, selected_author, selected_booktype, selected_book, refresh_signal):
+        def update_language_options(selected_year, selected_category, selected_author, selected_booktype, selected_book, refresh_signal):
             """Update language filter options based on other filters"""
             # Convert year selection to list for filtering
             if selected_year == "lifetime" or not selected_year:
@@ -731,7 +754,7 @@ class ResulamDashboard:
             else:
                 years = selected_year
             
-            df, _ = _get_filtered_data(years, None, selected_author, selected_booktype, selected_book)
+            df, _ = _get_filtered_data(years, None, selected_author, selected_booktype, selected_book, selected_category)
             available_languages = sorted(df['Language'].dropna().unique().tolist())
             
             return [{"label": "All Languages", "value": "all"}] + [
@@ -741,13 +764,14 @@ class ResulamDashboard:
         @self.app.callback(
             Output("author-filter", "options"),
             Input("year-filter", "value"),
+            Input("category-filter", "value"),
             Input("language-filter", "value"),
             Input("booktype-filter", "value"),
             Input("book-filter", "value"),
             Input("data-refresh-signal", "data"),
             prevent_initial_call=False
         )
-        def update_author_options(selected_year, selected_language, selected_booktype, selected_book, refresh_signal):
+        def update_author_options(selected_year, selected_category, selected_language, selected_booktype, selected_book, refresh_signal):
             """Update author filter options based on other filters"""
             if selected_year == "lifetime" or not selected_year:
                 years = None
@@ -756,7 +780,7 @@ class ResulamDashboard:
             else:
                 years = selected_year
             
-            _, df_exploded = _get_filtered_data(years, selected_language, None, selected_booktype, selected_book)
+            _, df_exploded = _get_filtered_data(years, selected_language, None, selected_booktype, selected_book, selected_category)
             available_authors = get_unique_authors(df_exploded['Authors_Exploded'])
             
             return [{"label": "All Authors", "value": "all"}] + [
@@ -766,13 +790,14 @@ class ResulamDashboard:
         @self.app.callback(
             Output("booktype-filter", "options"),
             Input("year-filter", "value"),
+            Input("category-filter", "value"),
             Input("language-filter", "value"),
             Input("author-filter", "value"),
             Input("book-filter", "value"),
             Input("data-refresh-signal", "data"),
             prevent_initial_call=False
         )
-        def update_booktype_options(selected_year, selected_language, selected_author, selected_book, refresh_signal):
+        def update_booktype_options(selected_year, selected_category, selected_language, selected_author, selected_book, refresh_signal):
             """Update book type filter options based on other filters"""
             if selected_year == "lifetime" or not selected_year:
                 years = None
@@ -781,7 +806,7 @@ class ResulamDashboard:
             else:
                 years = selected_year
             
-            df, _ = _get_filtered_data(years, selected_language, selected_author, None, selected_book)
+            df, _ = _get_filtered_data(years, selected_language, selected_author, None, selected_book, selected_category)
             available_types = sorted(df['BookType'].dropna().unique().tolist())
             
             type_labels = {"Ebook": "📱 eBook", "Paper": "📖 Paperback", "HardCover": "📚 Hardcover"}
@@ -792,13 +817,14 @@ class ResulamDashboard:
         @self.app.callback(
             Output("book-filter", "options"),
             Input("year-filter", "value"),
+            Input("category-filter", "value"),
             Input("language-filter", "value"),
             Input("author-filter", "value"),
             Input("booktype-filter", "value"),
             Input("data-refresh-signal", "data"),
             prevent_initial_call=False
         )
-        def update_book_options(selected_year, selected_language, selected_author, selected_booktype, refresh_signal):
+        def update_book_options(selected_year, selected_category, selected_language, selected_author, selected_booktype, refresh_signal):
             """Update book filter options based on other filters"""
             if selected_year == "lifetime" or not selected_year:
                 years = None
@@ -807,7 +833,7 @@ class ResulamDashboard:
             else:
                 years = selected_year
             
-            df, _ = _get_filtered_data(years, selected_language, selected_author, selected_booktype, None)
+            df, _ = _get_filtered_data(years, selected_language, selected_author, selected_booktype, None, selected_category)
             available_books = sorted(df['book_nick_name'].dropna().unique().tolist())
             
             return [{"label": "All Books", "value": "all"}] + [
@@ -2200,7 +2226,7 @@ class ResulamDashboard:
                             dbc.Card([
                                 dbc.CardHeader(
                                     dbc.Row([
-                                        dbc.Col([html.H4(f"{year_str} 👨🏿‍👩🏿‍👧🏿 Author Names (By Earnings)")], md=9),
+                                        dbc.Col([html.H4(f"{year_str} 👨🏿‍👩🏿‍👧🏿 African Authors (By Earnings)")], md=9),
                                         dbc.Col([
                                             dbc.Button("📥 CSV", id="download-authors-earnings-csv", color="info", size="sm", className="me-2"),
                                             dbc.Button("📥 TXT", id="download-authors-earnings-txt", color="info", size="sm")
@@ -2611,7 +2637,7 @@ class ResulamDashboard:
                     html.P([
                         html.Span(f"🌐 {language}", className="me-2"),
                         html.Br(),
-                        html.Span(f"✍️ {authors}", style={"fontSize": "0.8rem"})
+                        html.Span(f"✍🏿 {authors}", style={"fontSize": "0.8rem"})
                     ], className="card-text text-muted small mb-2"),
                     html.Div(link_buttons, className="mt-auto")
                 ], className="d-flex flex-column")
