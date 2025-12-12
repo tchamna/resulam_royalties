@@ -69,8 +69,7 @@ class DataCleaner:
         for old_title, new_title in TITLE_NORMALIZATION.items():
             df[column] = df[column].str.replace(old_title, new_title, regex=False)
         
-        # Remove subtitle markers
-        df[column] = df[column].apply(lambda x: x.split("–")[0].strip() if isinstance(x, str) else x)
+        # Just strip whitespace - don't split on en-dash as it breaks nickname matching
         df[column] = df[column].str.strip()
         
         return df
@@ -145,20 +144,59 @@ class BookMetadataMapper:
             for title, language in self.language_mapping.items()
             if isinstance(title, str)
         }
+        
+        # Precompute normalized nickname lookup for fuzzy matching
+        self._nickname_lookup = {}
+        for title, nickname in BOOK_NICKNAME_MAPPING.items():
+            normalized_key = self._normalize_for_matching(title)
+            self._nickname_lookup[normalized_key] = nickname
+    
+    def _normalize_for_matching(self, text: str) -> str:
+        """Normalize text for fuzzy matching - remove accents and special chars"""
+        import unicodedata
+        import re
+        # Normalize quotes and apostrophes BEFORE unicode normalization
+        # This handles curly quotes that might be affected by NFKD
+        text = text.replace('\u2018', "'")  # LEFT SINGLE QUOTATION MARK
+        text = text.replace('\u2019', "'")  # RIGHT SINGLE QUOTATION MARK  
+        text = text.replace('\u201C', '"')  # LEFT DOUBLE QUOTATION MARK
+        text = text.replace('\u201D', '"')  # RIGHT DOUBLE QUOTATION MARK
+        text = text.replace('\u00AB', '"')  # LEFT-POINTING DOUBLE ANGLE QUOTATION MARK «
+        text = text.replace('\u00BB', '"')  # RIGHT-POINTING DOUBLE ANGLE QUOTATION MARK »
+        text = text.replace('\u2013', '-')  # EN DASH
+        text = text.replace('\u2014', '-')  # EM DASH
+        text = text.replace('\u02BC', "'")  # MODIFIER LETTER APOSTROPHE
+        text = text.replace('\u02B9', "'")  # MODIFIER LETTER PRIME
+        text = text.replace('\u0027', "'")  # APOSTROPHE (standard)
+        text = text.replace('\u2032', "'")  # PRIME
+        # Normalize unicode characters
+        text = unicodedata.normalize('NFKD', text)
+        # Remove combining characters (accents)
+        text = ''.join(c for c in text if not unicodedata.combining(c))
+        # Convert to lowercase
+        text = text.lower()
+        # Collapse multiple spaces into single space
+        text = re.sub(r'\s+', ' ', text)
+        return text.strip()
     
     def get_book_nickname(self, title: str) -> str:
-        """Get book nickname from title"""
+        """Get book nickname from hardcoded mapping ONLY"""
         if not isinstance(title, str):
             return title
 
-        title_normalized = title.strip()
-        title_lower = title_normalized.lower()
+        title_stripped = title.strip()
 
-        for key, value in BOOK_NICKNAME_MAPPING.items():
-            if isinstance(key, str) and key.lower() in title_lower:
-                return value
+        # First try exact match
+        if title_stripped in BOOK_NICKNAME_MAPPING:
+            return BOOK_NICKNAME_MAPPING[title_stripped]
+        
+        # Try normalized match for resilience against Unicode variations
+        title_normalized = self._normalize_for_matching(title_stripped)
+        if title_normalized in self._nickname_lookup:
+            return self._nickname_lookup[title_normalized]
 
-        return self.nickname_mapping.get(title_normalized, title_normalized)
+        # Fallback: return simplified title (not the old CSV nicknames)
+        return title_stripped
     
     def get_authors(self, title: str) -> str:
         """Get authors from title with special rules"""

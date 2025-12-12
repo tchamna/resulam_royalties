@@ -15,6 +15,42 @@ from ..visualization import SalesCharts, AuthorCharts, GeographicCharts, Summary
 from ..visualization.earning_history import EarningHistoryCharts
 
 
+def format_years_compact(years: list) -> str:
+    """Format a list of years into a compact string representation.
+    
+    Examples:
+        [2025, 2024, 2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016] -> "2016-2025"
+        [2024, 2023] -> "2023, 2024"
+        [2024] -> "2024"
+        [2025, 2023, 2021] -> "2021, 2023, 2025"
+    """
+    if not years:
+        return "No Data"
+    
+    sorted_years = sorted(years)
+    
+    if len(sorted_years) == 1:
+        return str(sorted_years[0])
+    
+    if len(sorted_years) == 2:
+        return f"{sorted_years[0]}, {sorted_years[1]}"
+    
+    # Check if years are consecutive
+    is_consecutive = all(
+        sorted_years[i] + 1 == sorted_years[i + 1] 
+        for i in range(len(sorted_years) - 1)
+    )
+    
+    if is_consecutive:
+        return f"{sorted_years[0]}-{sorted_years[-1]}"
+    else:
+        # Not consecutive - show range with gaps indicator or just min-max
+        if len(sorted_years) <= 3:
+            return ", ".join(map(str, sorted_years))
+        else:
+            return f"{sorted_years[0]}-{sorted_years[-1]}"
+
+
 def normalize_author_name(name: str) -> str:
     """Normalize author name using the AUTHOR_NORMALIZATION mapping"""
     if name in AUTHOR_NORMALIZATION:
@@ -325,53 +361,68 @@ class ResulamDashboard:
         ], fluid=True, className="py-3 mb-4")
         
         # Summary metrics cards (now dynamic based on filter)
+        # Common card style for consistent sizing
+        metric_card_style = {
+            "minHeight": "130px",
+            "height": "100%"
+        }
+        metric_card_body_style = {
+            "display": "flex",
+            "flexDirection": "column",
+            "justifyContent": "center",
+            "alignItems": "center",
+            "padding": "0.75rem 0.25rem"
+        }
+        metric_title_style = {"color": "#ffffff", "fontWeight": "600", "fontSize": "0.85rem", "marginBottom": "0.25rem", "whiteSpace": "nowrap"}
+        metric_value_style_base = {"fontWeight": "700", "fontSize": "2.5rem", "marginBottom": "0", "whiteSpace": "nowrap"}
+        
         metrics_row = dbc.Row([
             dbc.Col([
                 dbc.Card([
                     dbc.CardBody([
-                        html.H4("📖", className="text-center"),
-                        html.H5("Total Books Sold", className="text-center", style={"color": "#ffffff", "fontWeight": "600"}),
-                        html.H2(id="metric-books-sold", className="text-center", style={"color": "#00DDFF", "fontWeight": "700", "fontSize": "2.5rem"})
-                    ])
-                ], className="shadow-sm")
-            ], style={"flex": "1 1 20%"}, className="mb-3 ps-1 pe-1"),
+                        html.Div("📖", className="text-center", style={"fontSize": "1.5rem"}),
+                        html.Div("Total Books Sold", className="text-center", style=metric_title_style),
+                        html.Div(id="metric-books-sold", className="text-center", style={**metric_value_style_base, "color": "#00DDFF"})
+                    ], style=metric_card_body_style)
+                ], className="shadow-sm", style=metric_card_style)
+            ], width=True, className="mb-2 px-1"),
             dbc.Col([
                 dbc.Card([
                     dbc.CardBody([
-                        html.H4("🔄", className="text-center"),
-                        html.H5("Return Books", className="text-center", style={"color": "#ffffff", "fontWeight": "600"}),
-                        html.H2(id="metric-returns", className="text-center", style={"color": "#FF3333", "fontWeight": "700", "fontSize": "2.5rem"})
-                    ])
-                ], className="shadow-sm")
-            ], style={"flex": "1 1 20%"}, className="mb-3 ps-1 pe-1"),
+                        html.Div("🔄", className="text-center", style={"fontSize": "1.5rem"}),
+                        html.Div("Return Books", className="text-center", style=metric_title_style),
+                        html.Div(id="metric-returns", className="text-center", style={**metric_value_style_base, "color": "#FF3333"})
+                    ], style=metric_card_body_style)
+                ], className="shadow-sm", style=metric_card_style)
+            ], width=True, className="mb-2 px-1"),
             dbc.Col([
                 dbc.Card([
                     dbc.CardBody([
-                        html.H4("💵", className="text-center"),
-                        html.H5("Net Revenue", className="text-center", style={"color": "#ffffff", "fontWeight": "600"}),
-                        html.H2(id="metric-net-revenue", className="text-center", style={"color": "#00DDFF", "fontWeight": "700", "fontSize": "2.5rem"})
-                    ])
-                ], className="shadow-sm")
-            ], style={"flex": "1 1 20%"}, className="mb-3 ps-1 pe-1"),
+                        html.Div("💵", className="text-center", style={"fontSize": "1.5rem"}),
+                        html.Div("Net Revenue", className="text-center", style=metric_title_style),
+                        html.Div(id="metric-net-revenue", className="text-center", style={**metric_value_style_base, "color": "#00DDFF"})
+                    ], style=metric_card_body_style)
+                ], className="shadow-sm", style=metric_card_style)
+            ], width=True, className="mb-2 px-1"),
             dbc.Col([
                 dbc.Card([
                     dbc.CardBody([
-                        html.H4("📚", className="text-center"),
-                        html.H5("Unique Titles", className="text-center", style={"color": "#ffffff", "fontWeight": "600"}),
-                        html.H2(id="metric-titles", className="text-center", style={"color": "#888888", "fontWeight": "700", "fontSize": "2.5rem"})
-                    ])
-                ], className="shadow-sm")
-            ], style={"flex": "1 1 20%"}, className="mb-3 ps-1 pe-1"),
+                        html.Div("📚", className="text-center", style={"fontSize": "1.5rem"}),
+                        html.Div("Unique Titles", className="text-center", style=metric_title_style),
+                        html.Div(id="metric-titles", className="text-center", style={**metric_value_style_base, "color": "#888888"})
+                    ], style=metric_card_body_style)
+                ], className="shadow-sm", style=metric_card_style)
+            ], width=True, className="mb-2 px-1"),
             dbc.Col([
                 dbc.Card([
                     dbc.CardBody([
-                        html.H4("✍️", className="text-center"),
-                        html.H5("Contributing Authors", className="text-center", style={"color": "#ffffff", "fontWeight": "600"}),
-                        html.H2(id="metric-authors", className="text-center", style={"color": "#FFDD00", "fontWeight": "700", "fontSize": "2.5rem"})
-                    ])
-                ], className="shadow-sm")
-            ], style={"flex": "1 1 20%"}, className="mb-3 ps-1 pe-1")
-        ], className="mb-4 g-0", style={"display": "flex", "flexWrap": "nowrap"})
+                        html.Div("🧑🏿‍💼", className="text-center", style={"fontSize": "1.5rem"}),
+                        html.Div("Authors", className="text-center", style=metric_title_style),
+                        html.Div(id="metric-authors", className="text-center", style={**metric_value_style_base, "color": "#FFDD00"})
+                    ], style=metric_card_body_style)
+                ], className="shadow-sm", style=metric_card_style)
+            ], width=True, className="mb-2 px-1")
+        ], className="mb-3 g-2 flex-nowrap", style={"overflowX": "auto"})
         
         # Sales Trend Chart (2015-2025)
         sales_trend_section = dbc.Card([
@@ -445,7 +496,7 @@ class ResulamDashboard:
         tabs = dbc.Tabs([
             dbc.Tab(label="📊 Sales Overview", tab_id="sales"),
             dbc.Tab(label="📖 Books Analysis", tab_id="books"),
-            dbc.Tab(label="✍️ Authors Analysis", tab_id="authors"),
+            dbc.Tab(label="🧑🏿‍💼 Authors Analysis", tab_id="authors"),
             dbc.Tab(label="📈 Earning History", tab_id="trends"),
             dbc.Tab(label="🌍 Geographic Distribution", tab_id="geography"),
         ], id="dashboard-tabs", active_tab="sales", className="mb-4")
@@ -1407,10 +1458,12 @@ class ResulamDashboard:
                     dbc.Card([
                         dbc.CardHeader(html.H4("📚 Total Sales by Book")),
                         dbc.CardBody([
-                            dcc.Graph(
-                                figure=SalesCharts.sales_by_book_horizontal(data),
-                                config={'displayModeBar': False}
-                            )
+                            html.Div([
+                                dcc.Graph(
+                                    figure=SalesCharts.sales_by_book_horizontal(data),
+                                    config={'displayModeBar': False}
+                                )
+                            ], style={"maxHeight": "600px", "overflowY": "auto"})
                         ])
                     ], className="shadow-sm mb-4")
                 ])
@@ -1513,7 +1566,7 @@ class ResulamDashboard:
                             dbc.Card([
                                 dbc.CardHeader(
                                     dbc.Row([
-                                        dbc.Col([html.H4(f"{year_str} 👥 Author Names (By Earnings)")], md=9),
+                                        dbc.Col([html.H4(f"{year_str} 👨🏿‍👩🏿‍👧🏿 Author Names (By Earnings)")], md=9),
                                         dbc.Col([
                                             dbc.Button("📥 CSV", id="download-authors-earnings-csv", color="info", size="sm", className="me-2"),
                                             dbc.Button("📥 TXT", id="download-authors-earnings-txt", color="info", size="sm")
@@ -1560,7 +1613,7 @@ class ResulamDashboard:
                     ])
                 ))({author: data[data['Authors_Exploded'].apply(lambda x: normalize_author_name(x)) == author]['Royalty per Author (USD)'].sum() * NET_REVENUE_PERCENTAGE 
                     for author in get_unique_authors(data['Authors_Exploded']) if author.lower() != "resulam"},
-                   ", ".join(map(str, sorted(years_in_data, reverse=True))) if years_in_data else "No Data"),
+                   format_years_compact(years_in_data)),
                 dcc.Download(id="download-authors-earnings-csv"),
                 dcc.Download(id="download-authors-earnings-txt"),
                 dcc.Download(id="download-authors-adjustment-csv"),
@@ -1745,8 +1798,9 @@ class ResulamDashboard:
             if selected_language and selected_language != "all":
                 filtered_df = filtered_df[filtered_df['Language'] == selected_language]
             
-            # Get books with refunds
-            returns_df = filtered_df[filtered_df['Units Refunded'] > 0][['Title', 'Units Sold', 'Units Refunded', 'Marketplace', 'Royalty Date']].copy()
+            # Get books with refunds - use book_nick_name (nickname) instead of full Title
+            returns_df = filtered_df[filtered_df['Units Refunded'] > 0][['book_nick_name', 'Units Sold', 'Units Refunded', 'Marketplace', 'Royalty Date']].copy()
+            returns_df = returns_df.rename(columns={'book_nick_name': 'Book'})
             returns_df = returns_df.sort_values('Units Refunded', ascending=False)
             
             if len(returns_df) == 0:
