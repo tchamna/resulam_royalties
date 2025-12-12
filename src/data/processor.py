@@ -138,12 +138,12 @@ class BookMetadataMapper:
             self.books_df['language_name'].tolist()
         ))
 
-        # Precompute normalized lookups for resilient matching
-        self._language_lookup = {
-            str(title).strip().lower(): language
-            for title, language in self.language_mapping.items()
-            if isinstance(title, str)
-        }
+        # Precompute normalized lookups for resilient matching (language)
+        self._language_lookup = {}
+        for title, language in self.language_mapping.items():
+            if isinstance(title, str) and isinstance(language, str):
+                normalized_key = self._normalize_for_matching(title)
+                self._language_lookup[normalized_key] = language
         
         # Precompute normalized nickname lookup for fuzzy matching
         self._nickname_lookup = {}
@@ -177,7 +177,9 @@ class BookMetadataMapper:
         text = text.lower()
         # Collapse multiple spaces into single space
         text = re.sub(r'\s+', ' ', text)
-        return text.strip()
+        # Strip trailing punctuation (period, comma, etc.) that might cause mismatches
+        text = text.strip().rstrip('.,;:!')
+        return text
     
     def get_book_nickname(self, title: str) -> str:
         """Get book nickname from hardcoded mapping ONLY"""
@@ -218,19 +220,23 @@ class BookMetadataMapper:
     def get_language(self, title: str) -> str:
         """Resolve language for a given title with graceful fallbacks"""
         if not isinstance(title, str):
-            return title
+            return "Other"
 
-        title_normalized = title.strip()
-        title_lower = title_normalized.lower()
+        title_stripped = title.strip()
+        
+        # First try exact match from language_mapping
+        if title_stripped in self.language_mapping:
+            lang = self.language_mapping[title_stripped]
+            if isinstance(lang, str) and lang:
+                return lang
+        
+        # Try normalized match (handles Unicode variations, extra spaces, etc.)
+        title_normalized = self._normalize_for_matching(title_stripped)
+        if title_normalized in self._language_lookup:
+            return self._language_lookup[title_normalized]
 
-        if title_lower in self._language_lookup:
-            return self._language_lookup[title_lower]
-
-        for key_lower, value in self._language_lookup.items():
-            if key_lower and key_lower in title_lower:
-                return value
-
-        return LanguageClassifier.classify_language(title_normalized)
+        # Fallback to keyword-based classification
+        return LanguageClassifier.classify_language(title_stripped)
 
 
 class RoyaltiesProcessor:
@@ -276,8 +282,8 @@ class RoyaltiesProcessor:
                 hardcoded_fallback=EXCHANGE_RATES_HARDCODED
             )
         
-        # Apply language classification (book_nickname and Authors already added)
-        df['Language'] = df['Language'].apply(LanguageClassifier.classify_language)
+        # Language is already set from books database via mapper.get_language()
+        # No need to overwrite with LanguageClassifier
         
         # Count authors
         df['Authors Count'] = df['Authors'].apply(RoyaltiesProcessor.count_authors)
@@ -326,6 +332,12 @@ def load_and_process_all_data() -> Dict[str, pd.DataFrame]:
     books_df = DataCleaner.normalize_titles(books_df)
     books_df['authors'] = books_df['authors'].str.strip()
     books_df['authors'] = books_df['authors'].replace(AUTHOR_NORMALIZATION)
+    
+    # Strip date suffix from books database titles (e.g., " – June 23, 2015")
+    # This helps match with royalties titles that don't have dates
+    import re
+    date_pattern = r'\.?\s*[–-]\s*(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\.?,?\s*$'
+    books_df['Title'] = books_df['Title'].str.replace(date_pattern, '', regex=True).str.strip()
     
     # Get unique ISBNs/ASINs
     ebook_list = ebook_df["ASIN"].unique().tolist()
