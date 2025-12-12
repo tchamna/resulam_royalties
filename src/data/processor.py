@@ -111,7 +111,7 @@ class LanguageClassifier:
         elif "grenier du hausa" in title_lower or "grenier hausa" in title_lower:
             return "Hausa"
         else:
-            return title
+            return "Other"
 
 
 class BookMetadataMapper:
