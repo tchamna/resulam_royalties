@@ -263,7 +263,8 @@ class PublicDashboard:
         </html>
         '''
         
-        self.app.title = DASHBOARD_CONFIG['title']
+        # Set page title for public site (fallback, multi-page router overrides per path)
+        self.app.title = "African Languages Books - Resulam"
         
         # Calculate metrics
         self.metrics = SummaryMetrics.calculate_metrics(self.royalties)
@@ -293,7 +294,7 @@ class PublicDashboard:
             dbc.Row([
                 dbc.Col([
                     html.H1(
-                        "Resulam Royalties Dashboard",
+                        "African Languages Libraries - By Resulam",
                         className="text-center text-light mb-4"
                     ),
                     html.P(

@@ -41,7 +41,8 @@ class MultiPageDashboard:
         """Build layout with URL routing"""
         self.app.layout = dbc.Container([
             dcc.Location(id='multi-page-url', refresh=False),
-            html.Div(id='multi-page-content')
+            html.Div(id='multi-page-content'),
+            html.Div(id='page-title-setter', style={"display": "none"})
         ], fluid=True)
     
     def _register_routing_callback(self):
@@ -57,6 +58,19 @@ class MultiPageDashboard:
             else:
                 # Return simplified public dashboard content
                 return self.public_dashboard.app.layout
+
+        # Client-side title switcher so each route has its own page title
+        self.app.clientside_callback(
+            """
+            function(pathname) {
+                const isAuthors = pathname && pathname.indexOf('/authors') !== -1;
+                document.title = isAuthors ? 'Resulam Royalties Dashboard' : 'African Languages Books - Resulam';
+                return '';
+            }
+            """,
+            Output('page-title-setter', 'children'),
+            Input('multi-page-url', 'pathname')
+        )
     
     def run(self, host: str = "127.0.0.1", port: int = 8050, debug: bool = False):
         """Run the appropriate dashboard based on current context"""
@@ -75,4 +89,3 @@ class MultiPageDashboard:
 def create_multi_page_dashboard(data: Dict[str, pd.DataFrame]) -> MultiPageDashboard:
     """Factory function to create multi-page dashboard"""
     return MultiPageDashboard(data)
-
