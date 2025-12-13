@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Main application entry point for Resulam Royalties Dashboard
 
@@ -12,11 +14,17 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent))
 
+# Ensure UTF-8 output encoding
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout.reconfigure(encoding='utf-8')
+if sys.stderr.encoding != 'utf-8':
+    sys.stderr.reconfigure(encoding='utf-8')
+
 # Debug: Show environment variables
 print(f"\n🔍 DEBUG: USE_S3_DATA environment variable = {os.getenv('USE_S3_DATA', 'NOT SET')}")
 
 from src.data import load_and_process_all_data
-from src.dashboard import create_dashboard
+from src.dashboard import create_dashboard, create_public_dashboard, create_multi_page_dashboard
 from src.utils.helpers import export_processed_data, validate_data_files
 from src.utils.s3_sync import sync_data_on_startup
 from src.config import (
@@ -45,6 +53,8 @@ def main():
     parser.add_argument('--host', type=str, default='127.0.0.1', help='Host to bind to (default: 127.0.0.1)')
     parser.add_argument('--port', type=int, default=8050, help='Port to bind to (default: 8050)')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    parser.add_argument('--public', action='store_true', help='Run public dashboard only')
+    parser.add_argument('--authors', action='store_true', help='Run authors dashboard only')
     args = parser.parse_args()
     
     print("\n" + "="*70)
@@ -96,7 +106,18 @@ def main():
     # Create and run dashboard
     print("\n🚀 Starting dashboard...")
     try:
-        dashboard = create_dashboard(data)
+        if args.public:
+            print("   Mode: PUBLIC DASHBOARD ONLY")
+            dashboard = create_public_dashboard(data)
+        elif args.authors:
+            print("   Mode: AUTHORS DASHBOARD ONLY")
+            dashboard = create_dashboard(data)
+        else:
+            print("   Mode: MULTI-PAGE DASHBOARD")
+            print("   Routes:")
+            print("     - http://localhost:8050/ - Public Shop")
+            print("     - http://localhost:8050/authors - Authors Analytics")
+            dashboard = create_multi_page_dashboard(data)
         dashboard.run(host=args.host, port=args.port, debug=args.debug)
     except Exception as e:
         print(f"\n❌ Error starting dashboard: {e}")
