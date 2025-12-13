@@ -1,7 +1,7 @@
 """
 Multi-page Dash application supporting both public and authors dashboards
 Routes:
-  - / : Public dashboard (Purchase + Sales Overview)
+  - / : Public dashboard (Purchase + Sales Overview)  
   - /authors : Internal authors analytics dashboard
 """
 import dash
@@ -25,69 +25,47 @@ class MultiPageDashboard:
         self.public_dashboard = PublicDashboard(data)
         self.authors_dashboard = ResulamDashboard(data)
         
-        # Use the public dashboard's app as the base (they both have their own Flask servers with webhooks)
-        self.app = self.public_dashboard.app
+        # Use authors dashboard as base since it has all features
+        self.app = self.authors_dashboard.app
         
-        # Register webhook blueprint from authors dashboard if not already registered
-        import os
-        if hasattr(self.authors_dashboard.app.server, 'blueprints'):
-            for name, blueprint in list(self.authors_dashboard.app.server.blueprints.items()):
-                if name not in self.app.server.blueprints:
-                    try:
-                        self.app.server.register_blueprint(blueprint)
-                    except Exception:
-                        pass
+        # Store original layout
+        self.authors_layout = self.authors_dashboard.app.layout
         
-        # Save original public layout
-        self.public_layout = self.public_dashboard.app.layout
-        
-        # Build new multi-page layout with routing
-        self._build_layout()
+        # Create new routing layout
+        self._build_routing_layout()
         
         # Register routing callback
-        self._register_callbacks()
+        self._register_routing_callback()
     
-    def _build_layout(self):
-        """Build multi-page layout with URL routing"""
-        # Create a wrapper layout that includes URL routing
+    def _build_routing_layout(self):
+        """Build layout with URL routing"""
         self.app.layout = dbc.Container([
-            dcc.Location(id='url', refresh=False),
-            html.Div(id='page-content')
+            dcc.Location(id='multi-page-url', refresh=False),
+            html.Div(id='multi-page-content')
         ], fluid=True)
     
-    def _register_callbacks(self):
-        """Register callback to route between dashboards based on URL"""
-        
+    def _register_routing_callback(self):
+        """Register routing callback"""
         @self.app.callback(
-            Output('page-content', 'children'),
-            Input('url', 'pathname')
+            Output('multi-page-content', 'children'),
+            Input('multi-page-url', 'pathname')
         )
-        def display_page(pathname):
-            # Route based on pathname
+        def route_content(pathname):
             if pathname and '/authors' in pathname:
-                # Return the authors dashboard layout
-                return self.authors_dashboard.app.layout
+                # Return full authors dashboard content
+                return self.authors_layout
             else:
-                # Return the public dashboard layout  
-                return self.public_layout
-        
-        # Copy callbacks from both dashboards using the app's callback registry
-        # This ensures all callbacks are available regardless of which layout is displayed
-        try:
-            # Get public dashboard callbacks
-            for callback_id, callback_func in self.public_dashboard.app._callbacks.items():
-                if callback_id not in self.app._callbacks:
-                    self.app._callbacks[callback_id] = callback_func
-        except Exception:
-            pass
-        
-        try:
-            # Get authors dashboard callbacks  
-            for callback_id, callback_func in self.authors_dashboard.app._callbacks.items():
-                if callback_id not in self.app._callbacks:
-                    self.app._callbacks[callback_id] = callback_func
-        except Exception:
-            pass
+                # Return simplified public dashboard content
+                return self.public_dashboard.app.layout
+    
+    def run(self, host: str = "127.0.0.1", port: int = 8050, debug: bool = False):
+        """Run the appropriate dashboard based on current context"""
+        # For now, run the public dashboard as default
+        # In production, the web server handles the routing
+        if self.public_dashboard is None:
+            self.public_dashboard = PublicDashboard(self.data)
+        self.app = self.public_dashboard.app
+        self.app.run(host=host, port=port, debug=debug)
     
     def run(self, host: str = "127.0.0.1", port: int = 8050, debug: bool = False):
         """Run the multi-page dashboard"""
