@@ -164,6 +164,8 @@ class ResulamDashboard:
                 <title>{%title%}</title>
                 {%favicon%}
                 {%css%}
+                <meta property="og:title" content="African Languages Books - Resulam" />
+                <meta name="twitter:title" content="African Languages Books - Resulam" />
                 <style>
                     body.light-mode {
                         background-color: #f8f9fa !important;
@@ -263,7 +265,8 @@ class ResulamDashboard:
         </html>
         '''
         
-        self.app.title = DASHBOARD_CONFIG['title']
+        # Use public-friendly title for previews
+        self.app.title = "African Languages Books - Resulam"
         
         # Calculate metrics
         self.metrics = SummaryMetrics.calculate_metrics(self.royalties)
