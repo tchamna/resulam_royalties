@@ -164,6 +164,8 @@ class PublicDashboard:
                 <title>{%title%}</title>
                 {%favicon%}
                 {%css%}
+                <meta property="og:title" content="African Languages Books - Resulam" />
+                <meta name="twitter:title" content="African Languages Books - Resulam" />
                 <style>
                     body.light-mode {
                         background-color: #f8f9fa !important;
