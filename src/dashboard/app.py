@@ -8,11 +8,22 @@ from typing import Dict
 from pathlib import Path
 import pandas as pd
 import math
+import unicodedata
 import plotly.graph_objects as go
 
 from ..config import DASHBOARD_CONFIG, CURRENT_YEAR, LAST_YEAR, AUTHOR_NORMALIZATION, NET_REVENUE_PERCENTAGE, BOOKS_DATABASE_PATH
 from ..visualization import SalesCharts, AuthorCharts, GeographicCharts, SummaryMetrics
 from ..visualization.earning_history import EarningHistoryCharts
+
+
+def sort_with_accents(items: list) -> list:
+    """Sort items with accent-aware collation (Éwé sorts near Ewondo, not at the end)"""
+    def sort_key(s):
+        # Normalize accented characters to their base form for sorting
+        normalized = unicodedata.normalize('NFD', s)
+        # Remove combining characters (accents) for the sort key
+        return ''.join(c for c in normalized if not unicodedata.combining(c))
+    return sorted(items, key=sort_key)
 
 
 def format_years_compact(years: list) -> str:
@@ -307,8 +318,11 @@ class ResulamDashboard:
         # Year filter section with dropdown multi-select
         years_reversed = sorted(self.available_years, reverse=True)
         
-        # Get unique languages for language filter
-        all_languages = sorted(self.royalties['Language'].unique().tolist())
+        # Get unique languages for language filter (exclude African Names and Bamileke)
+        all_languages = sort_with_accents([
+            lang for lang in self.royalties['Language'].unique().tolist()
+            if lang not in ['African Names', 'Bamileke']
+        ])
         
         # Get unique authors for author filter
         all_authors_for_filter = get_unique_authors(self.royalties_exploded['Authors_Exploded'])
@@ -333,7 +347,7 @@ class ResulamDashboard:
                     dbc.Label("Year:", className="fw-bold text-light mb-1", style={"fontSize": "0.85rem"}),
                     dcc.Dropdown(
                         id="year-filter",
-                        options=[{"label": "Life time", "value": "lifetime"}] + 
+                        options=[{"label": "Lifetime", "value": "lifetime"}] + 
                                 [{"label": str(year), "value": year} for year in years_reversed],
                         value=CURRENT_YEAR,
                         multi=False,
@@ -344,10 +358,10 @@ class ResulamDashboard:
                     dcc.Store(id="year-filter-store", data=[CURRENT_YEAR])
                 ], md=2, sm=4, xs=6),
                 dbc.Col([
-                    dbc.Label("Language:", className="fw-bold text-light mb-1", style={"fontSize": "0.85rem"}),
+                    dbc.Label(id="language-label", className="fw-bold text-light mb-1", style={"fontSize": "0.85rem"}),
                     dcc.Dropdown(
                         id="language-filter",
-                        options=[{"label": "All Languages", "value": "all"}] + [
+                        options=[{"label": f"All Languages ({len(all_languages)})", "value": "all"}] + [
                             {"label": lang, "value": lang} for lang in all_languages
                         ],
                         value="all",
@@ -358,10 +372,10 @@ class ResulamDashboard:
                     )
                 ], md=2, sm=4, xs=6),
                 dbc.Col([
-                    dbc.Label("Author:", className="fw-bold text-light mb-1", style={"fontSize": "0.85rem"}),
+                    dbc.Label(id="author-label", className="fw-bold text-light mb-1", style={"fontSize": "0.85rem"}),
                     dcc.Dropdown(
                         id="author-filter",
-                        options=[{"label": "All Authors", "value": "all"}] + [
+                        options=[{"label": f"All Authors ({len(all_authors_for_filter)})", "value": "all"}] + [
                             {"label": author, "value": author} for author in all_authors_for_filter
                         ],
                         value="all",
@@ -372,10 +386,10 @@ class ResulamDashboard:
                     )
                 ], md=2, sm=4, xs=6),
                 dbc.Col([
-                    dbc.Label("Type:", className="fw-bold text-light mb-1", style={"fontSize": "0.85rem"}),
+                    dbc.Label(id="booktype-label", className="fw-bold text-light mb-1", style={"fontSize": "0.85rem"}),
                     dcc.Dropdown(
                         id="booktype-filter",
-                        options=[{"label": "All Types", "value": "all"}] + [
+                        options=[{"label": f"All Types ({len(all_book_types)})", "value": "all"}] + [
                             {"label": "📱 eBook" if bt == "Ebook" else "📖 Paperback" if bt == "Paper" else "📚 Hardcover" if bt == "HardCover" else bt, "value": bt} for bt in all_book_types
                         ],
                         value="all",
@@ -386,10 +400,10 @@ class ResulamDashboard:
                     )
                 ], md=2, sm=4, xs=6),
                 dbc.Col([
-                    dbc.Label("Book:", className="fw-bold text-light mb-1", style={"fontSize": "0.85rem"}),
+                    dbc.Label(id="book-label", className="fw-bold text-light mb-1", style={"fontSize": "0.85rem"}),
                     dcc.Dropdown(
                         id="book-filter",
-                        options=[{"label": "All Books", "value": "all"}] + [
+                        options=[{"label": f"All Books ({len(all_book_nicknames)})", "value": "all"}] + [
                             {"label": nickname, "value": nickname} for nickname in all_book_nicknames
                         ],
                         value="all",
@@ -401,10 +415,10 @@ class ResulamDashboard:
                     )
                 ], md=2, sm=4, xs=6),
                 dbc.Col([
-                    dbc.Label("Category:", className="fw-bold text-light mb-1", style={"fontSize": "0.85rem"}),
+                    dbc.Label(id="category-label", className="fw-bold text-light mb-1", style={"fontSize": "0.85rem"}),
                     dcc.Dropdown(
                         id="category-filter",
-                        options=[{"label": "All Categories", "value": "all"}] + [
+                        options=[{"label": f"All Categories ({len(all_categories)})", "value": "all"}] + [
                             {"label": cat, "value": cat} for cat in all_categories
                         ],
                         value="all",
@@ -755,11 +769,74 @@ class ResulamDashboard:
                 years = selected_year
             
             df, _ = _get_filtered_data(years, None, selected_author, selected_booktype, selected_book, selected_category)
-            available_languages = sorted(df['Language'].dropna().unique().tolist())
+            available_languages = sort_with_accents([
+                lang for lang in df['Language'].dropna().unique().tolist()
+                if lang not in ['African Names', 'Bamileke']
+            ])
             
-            return [{"label": "All Languages", "value": "all"}] + [
+            return [{"label": f"All Languages ({len(available_languages)})", "value": "all"}] + [
                 {"label": lang, "value": lang} for lang in available_languages
             ]
+
+        @self.app.callback(
+            Output("language-label", "children"),
+            Input("year-filter", "value"),
+            prevent_initial_call=False
+        )
+        def update_language_label(selected_year):
+            """Update language label based on selected year"""
+            if selected_year == "lifetime" or not selected_year:
+                return "Languages (Lifetime):"
+            else:
+                return f"Languages (With a sell in {selected_year}):"
+
+        @self.app.callback(
+            Output("author-label", "children"),
+            Input("year-filter", "value"),
+            prevent_initial_call=False
+        )
+        def update_author_label(selected_year):
+            """Update author label based on selected year"""
+            if selected_year == "lifetime" or not selected_year:
+                return "Authors (Lifetime):"
+            else:
+                return f"Authors (With a sell in {selected_year}):"
+
+        @self.app.callback(
+            Output("booktype-label", "children"),
+            Input("year-filter", "value"),
+            prevent_initial_call=False
+        )
+        def update_booktype_label(selected_year):
+            """Update book type label based on selected year"""
+            if selected_year == "lifetime" or not selected_year:
+                return "Type (Lifetime):"
+            else:
+                return f"Type (With a sell in {selected_year}):"
+
+        @self.app.callback(
+            Output("category-label", "children"),
+            Input("year-filter", "value"),
+            prevent_initial_call=False
+        )
+        def update_category_label(selected_year):
+            """Update category label based on selected year"""
+            if selected_year == "lifetime" or not selected_year:
+                return "Category (Lifetime):"
+            else:
+                return f"Category (With a sell in {selected_year}):"
+
+        @self.app.callback(
+            Output("book-label", "children"),
+            Input("year-filter", "value"),
+            prevent_initial_call=False
+        )
+        def update_book_label(selected_year):
+            """Update book label based on selected year"""
+            if selected_year == "lifetime" or not selected_year:
+                return "Books (Lifetime):"
+            else:
+                return f"Books (With a sell in {selected_year}):"
 
         @self.app.callback(
             Output("author-filter", "options"),
@@ -783,7 +860,7 @@ class ResulamDashboard:
             _, df_exploded = _get_filtered_data(years, selected_language, None, selected_booktype, selected_book, selected_category)
             available_authors = get_unique_authors(df_exploded['Authors_Exploded'])
             
-            return [{"label": "All Authors", "value": "all"}] + [
+            return [{"label": f"All Authors ({len(available_authors)})", "value": "all"}] + [
                 {"label": author, "value": author} for author in available_authors
             ]
 
@@ -810,7 +887,7 @@ class ResulamDashboard:
             available_types = sorted(df['BookType'].dropna().unique().tolist())
             
             type_labels = {"Ebook": "📱 eBook", "Paper": "📖 Paperback", "HardCover": "📚 Hardcover"}
-            return [{"label": "All Types", "value": "all"}] + [
+            return [{"label": f"All Types ({len(available_types)})", "value": "all"}] + [
                 {"label": type_labels.get(bt, bt), "value": bt} for bt in available_types
             ]
 
@@ -836,8 +913,45 @@ class ResulamDashboard:
             df, _ = _get_filtered_data(years, selected_language, selected_author, selected_booktype, None, selected_category)
             available_books = sorted(df['book_nick_name'].dropna().unique().tolist())
             
-            return [{"label": "All Books", "value": "all"}] + [
+            return [{"label": f"All Books ({len(available_books)})", "value": "all"}] + [
                 {"label": book, "value": book} for book in available_books
+            ]
+
+        @self.app.callback(
+            Output("category-filter", "options"),
+            Input("year-filter", "value"),
+            Input("language-filter", "value"),
+            Input("author-filter", "value"),
+            Input("booktype-filter", "value"),
+            Input("book-filter", "value"),
+            Input("data-refresh-signal", "data"),
+            prevent_initial_call=False
+        )
+        def update_category_options(selected_year, selected_language, selected_author, selected_booktype, selected_book, refresh_signal):
+            """Update category filter options based on other filters"""
+            if selected_year == "lifetime" or not selected_year:
+                years = None
+            elif isinstance(selected_year, int):
+                years = [selected_year]
+            else:
+                years = selected_year
+            
+            # Get filtered royalties data (without category filter)
+            df, _ = _get_filtered_data(years, selected_language, selected_author, selected_booktype, selected_book, None)
+            
+            # Map nicknames back to categories from books database
+            books_df = pd.read_csv(BOOKS_DATABASE_PATH)
+            nickname_to_category = dict(zip(books_df['book_nick_name'], books_df['category']))
+            
+            available_categories = set()
+            for nick in df['book_nick_name'].dropna().unique():
+                if nick in nickname_to_category and nickname_to_category[nick]:
+                    available_categories.add(nickname_to_category[nick])
+            
+            available_categories = sorted(list(available_categories))
+            
+            return [{"label": f"All Categories ({len(available_categories)})", "value": "all"}] + [
+                {"label": cat, "value": cat} for cat in available_categories
             ]
 
         @self.app.callback(
@@ -864,11 +978,14 @@ class ResulamDashboard:
             """Update year filter and display mode options when new data is available"""
             # Get updated years
             years_reversed = sorted(self.available_years, reverse=True)
-            year_options = [{"label": "Life time", "value": "lifetime"}] + \
+            year_options = [{"label": "Lifetime", "value": "lifetime"}] + \
                            [{"label": str(year), "value": year} for year in years_reversed]
             
             # Get updated languages for display mode
-            all_languages = sorted(self.royalties['Language'].unique().tolist())
+            all_languages = sort_with_accents([
+                lang for lang in self.royalties['Language'].unique().tolist()
+                if lang not in ['African Names', 'Bamileke']
+            ])
             display_mode_options = (
                 [{"label": "All (Stacked)", "value": "all_stacked"},
                  {"label": "All (Grouped)", "value": "all_grouped"}] +
