@@ -588,6 +588,9 @@ class PublicDashboard:
                 icon="success",
                 style={"position": "fixed", "top": 66, "right": 10, "width": 350, "zIndex": 9999},
             ),
+            # Hidden placeholders to satisfy callbacks registered on the shared app
+            html.Div(id="metric-net-revenue", style={"display": "none"}),
+            html.Div(id="metric-returns", style={"display": "none"}),
             
             # Footer
             html.Hr(),
