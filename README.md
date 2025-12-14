@@ -2,6 +2,8 @@
 
 A modern, interactive multi-page dashboard for analyzing book sales and royalties data from Amazon KDP.
 
+**Live Demo:** https://resulam-royalties.tchamna.com/
+
 ## 🚀 Quick Start
 
 ```bash
@@ -27,6 +29,10 @@ For detailed documentation, setup instructions, and feature descriptions, see:
 - [Complete Documentation](docs/README.md)
 - [Deployment Guide](DEPLOYMENT.md)
 - [Setup Checklist](SETUP_CHECKLIST.md)
+
+## Preview
+
+![Dashboard Preview](dashboard_screenshot.png)
 
 ## 🎯 Features
 
