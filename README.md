@@ -27,8 +27,8 @@ python main.py
 
 For detailed documentation, setup instructions, and feature descriptions, see:
 - [Complete Documentation](docs/README.md)
-- [Deployment Guide](DEPLOYMENT.md)
-- [Setup Checklist](SETUP_CHECKLIST.md)
+- [Deployment Guide](docs/deployment/DEPLOYMENT.md)
+- [Setup Checklist](docs/deployment/SETUP_CHECKLIST.md)
 
 ## Preview
 

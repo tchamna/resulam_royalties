@@ -5,9 +5,9 @@ Complete, automated deployment system for deploying your Resulam Royalties Dashb
 ## 📁 What's Included
 
 ### Deployment Scripts
-- **`deploy.ps1`** - PowerShell deployment script for Windows
-- **`deploy.sh`** - Bash deployment script for macOS/Linux
-- **`ec2-manage.sh`** - Management script for post-deployment operations
+- **`python scripts/deploy/deploy.py`** - Cross-platform deployment script (Python)
+- **`scripts/deploy/deploy.sh`** - Bash deployment script for macOS/Linux
+- **`scripts/deploy/ec2-manage.sh`** - Management script for post-deployment operations
 
 ### Documentation
 - **`SETUP_CHECKLIST.md`** - Pre-deployment setup checklist
@@ -31,14 +31,14 @@ Complete, automated deployment system for deploying your Resulam Royalties Dashb
 **Windows:**
 ```powershell
 cd C:\Users\tcham\Wokspace\resulam_royalties
-.\deploy.ps1
+python scripts/deploy/deploy.py
 ```
 
 **macOS/Linux:**
 ```bash
 cd ~/resulam_royalties
-chmod +x deploy.sh
-./deploy.sh
+chmod +x scripts/deploy/deploy.sh
+./scripts/deploy/deploy.sh
 ```
 
 **Wait 2-3 minutes, then visit:**
@@ -105,10 +105,10 @@ Your EC2 Instance
 **Steps:**
 ```powershell
 # Windows
-.\deploy.ps1 -EC2_IP "18.208.117.82" -KeyPath "C:\path\to\key.pem"
+python scripts/deploy/deploy.py -EC2_IP "18.208.117.82" -KeyPath "C:\path\to\key.pem"
 
 # macOS/Linux
-./deploy.sh 18.208.117.82 ~/.ssh/ec2-key.pem
+./scripts/deploy/deploy.sh 18.208.117.82 ~/.ssh/ec2-key.pem
 ```
 
 ### Method 2: GitHub Actions (Automated)
@@ -162,37 +162,37 @@ Your EC2 Instance
 
 ```powershell
 # Windows - Deploy with custom port
-.\deploy.ps1 -EC2_IP "18.208.117.82" -StartPort 8050
+python scripts/deploy/deploy.py -EC2_IP "18.208.117.82" -StartPort 8050
 ```
 
 ```bash
 # macOS/Linux - Deploy with custom repository
-./deploy.sh 18.208.117.82 ~/.ssh/ec2-key.pem 8050
+./scripts/deploy/deploy.sh 18.208.117.82 ~/.ssh/ec2-key.pem 8050
 ```
 
 ### Post-Deployment Management
 
 ```bash
 # Check status
-./ec2-manage.sh status
+./scripts/deploy/ec2-manage.sh status
 
 # View logs (follow mode)
-./ec2-manage.sh logs
+./scripts/deploy/ec2-manage.sh logs
 
 # Restart application
-./ec2-manage.sh restart
+./scripts/deploy/ec2-manage.sh restart
 
 # Update application
-./ec2-manage.sh update
+./scripts/deploy/ec2-manage.sh update
 
 # Rollback to previous version
-./ec2-manage.sh rollback
+./scripts/deploy/ec2-manage.sh rollback
 
 # Health check
-./ec2-manage.sh health
+./scripts/deploy/ec2-manage.sh health
 
 # SSH to instance
-./ec2-manage.sh ssh
+./scripts/deploy/ec2-manage.sh ssh
 ```
 
 ### SSH Direct Commands
@@ -328,17 +328,17 @@ sudo tail -f /var/log/nginx/access.log    # Nginx access logs
 ### Method 1: Using Management Script
 
 ```bash
-./ec2-manage.sh update
+./scripts/deploy/ec2-manage.sh update
 ```
 
 ### Method 2: Using Deployment Script
 
 ```powershell
 # Windows
-.\deploy.ps1
+python scripts/deploy/deploy.py
 
 # macOS/Linux
-./deploy.sh
+./scripts/deploy/deploy.sh
 ```
 
 ### Method 3: Manual via SSH
@@ -355,7 +355,7 @@ sudo systemctl restart resulam-royalties
 ### Using Management Script
 
 ```bash
-./ec2-manage.sh rollback
+./scripts/deploy/ec2-manage.sh rollback
 ```
 
 ### Manual Rollback
@@ -374,36 +374,36 @@ sudo systemctl restart resulam-royalties
 
 ```bash
 # Check service running
-./ec2-manage.sh status
+./scripts/deploy/ec2-manage.sh status
 
 # Perform health check
-./ec2-manage.sh health
+./scripts/deploy/ec2-manage.sh health
 
 # View logs
-./ec2-manage.sh logs
+./scripts/deploy/ec2-manage.sh logs
 ```
 
 ### System Resources
 
 ```bash
 # Disk usage
-./ec2-manage.sh disk
+./scripts/deploy/ec2-manage.sh disk
 
 # Memory usage
-./ec2-manage.sh memory
+./scripts/deploy/ec2-manage.sh memory
 
 # Port usage
-./ec2-manage.sh ports
+./scripts/deploy/ec2-manage.sh ports
 ```
 
 ### Nginx Status
 
 ```bash
 # Nginx service
-./ec2-manage.sh nginx-status
+./scripts/deploy/ec2-manage.sh nginx-status
 
 # Nginx error logs
-./ec2-manage.sh nginx-logs
+./scripts/deploy/ec2-manage.sh nginx-logs
 ```
 
 ## 🚀 CI/CD with GitHub Actions
@@ -437,30 +437,30 @@ git push origin main  # Automatically triggers GitHub Actions
 
 ```powershell
 # Windows
-.\deploy.ps1 -StartPort 9000
+python scripts/deploy/deploy.py -StartPort 9000
 
 # macOS/Linux
-./deploy.sh YOUR_EC2_IP ~/.ssh/ec2-key.pem 9000
+./scripts/deploy/deploy.sh YOUR_EC2_IP ~/.ssh/ec2-key.pem 9000
 ```
 
 ### Custom Repository
 
 ```powershell
 # Windows
-.\deploy.ps1 -Repository "your-username/your-repo"
+python scripts/deploy/deploy.py -Repository "your-username/your-repo"
 
 # macOS/Linux
-./deploy.sh YOUR_EC2_IP ~/.ssh/ec2-key.pem 8050
+./scripts/deploy/deploy.sh YOUR_EC2_IP ~/.ssh/ec2-key.pem 8050
 ```
 
 ### Custom EC2 Settings
 
 ```powershell
 # Windows
-.\deploy.ps1 -EC2_IP "1.2.3.4" -EC2_User "ubuntu" -KeyPath "C:\keys\aws.pem"
+python scripts/deploy/deploy.py -EC2_IP "1.2.3.4" -EC2_User "ubuntu" -KeyPath "C:\keys\aws.pem"
 
 # macOS/Linux
-./deploy.sh 1.2.3.4 ~/.ssh/ubuntu.pem 8050
+./scripts/deploy/deploy.sh 1.2.3.4 ~/.ssh/ubuntu.pem 8050
 ```
 
 ## 📚 Documentation
@@ -484,8 +484,8 @@ For detailed information, see:
 
 1. Check troubleshooting section above
 2. Review `DEPLOYMENT.md` for detailed help
-3. Check application logs: `./ec2-manage.sh logs`
-4. Check Nginx logs: `./ec2-manage.sh nginx-logs`
+3. Check application logs: `./scripts/deploy/ec2-manage.sh logs`
+4. Check Nginx logs: `./scripts/deploy/ec2-manage.sh nginx-logs`
 5. Test connectivity: `curl -v http://YOUR_EC2_IP`
 
 ## 📋 Requirements
@@ -517,7 +517,7 @@ This deployment system is part of the Resulam Royalties Dashboard project.
 1. Follow SETUP_CHECKLIST.md to prepare your environment
 2. Run the deployment script
 3. Access your dashboard at `http://YOUR_EC2_IP`
-4. Use `ec2-manage.sh` for ongoing management
+4. Use `scripts/deploy/ec2-manage.sh` for ongoing management
 5. Set up GitHub Actions for automated deployments
 
 ---

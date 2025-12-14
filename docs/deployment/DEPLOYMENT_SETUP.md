@@ -21,14 +21,14 @@ This guide will help you configure your GitHub CI/CD pipeline for automatic depl
 ### On Windows (PowerShell):
 
 ```powershell
-.\setup_deploy.ps1
+.\scripts\deploy\setup_deploy.ps1
 ```
 
 ### On macOS/Linux (Bash):
 
 ```bash
-chmod +x setup_deploy.sh
-./setup_deploy.sh
+chmod +x scripts/deploy/setup_deploy.sh
+./scripts/deploy/setup_deploy.sh
 ```
 
 ## What Gets Configured
@@ -99,11 +99,11 @@ Make sure the path to your `.pem` file is correct
 
 ## Next Steps
 
-1. Run the setup script: `setup_deploy.ps1` (Windows) or `setup_deploy.sh` (macOS/Linux)
+1. Run the setup script: `scripts/deploy/setup_deploy.ps1` (Windows) or `scripts/deploy/setup_deploy.sh` (macOS/Linux)
 2. Push your code to main branch
 3. Watch the deployment in GitHub Actions
 4. Verify your app is live at your EC2 domain
 
 ---
 
-For more details on manual EC2 deployment, see `deploy.py`
+For more details on manual EC2 deployment, see `scripts/deploy/deploy.py`

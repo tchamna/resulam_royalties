@@ -44,4 +44,4 @@ Write-Host ""
 Write-Host "✅ Loaded $loadedCount environment variables from $envFile" -ForegroundColor Green
 Write-Host ""
 Write-Host "Ready to run deployment:" -ForegroundColor Cyan
-Write-Host "  python deploy.py" -ForegroundColor Yellow
+Write-Host "  python scripts/deploy/deploy.py" -ForegroundColor Yellow

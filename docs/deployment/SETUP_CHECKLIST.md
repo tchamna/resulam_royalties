@@ -120,10 +120,10 @@ Before running the deployment script, ensure you have completed all steps below:
 - [ ] **Verify Deployment Scripts Exist**
   ```bash
   # Windows
-  dir deploy.ps1
+  dir scripts\deploy\deploy.*
   
   # macOS/Linux
-  ls -la deploy.sh
+  ls -la scripts/deploy/deploy.sh
   ```
 
 - [ ] **Verify requirements.txt Exists**
@@ -221,14 +221,14 @@ ssh -i ~/.ssh/ec2-key.pem ec2-user@YOUR_EC2_IP "echo 'SSH connection successful!
 **Windows:**
 ```powershell
 cd C:\Users\tcham\Wokspace\resulam_royalties
-.\deploy.ps1
+python scripts/deploy/deploy.py
 ```
 
 **macOS/Linux:**
 ```bash
 cd ~/resulam_royalties
-chmod +x deploy.sh
-./deploy.sh
+chmod +x scripts/deploy/deploy.sh
+./scripts/deploy/deploy.sh
 ```
 
 ### Step 5: Monitor Deployment
@@ -349,7 +349,7 @@ aws configure
 
 # Deploy to EC2
 cd C:\Users\tcham\Wokspace\resulam_royalties
-.\deploy.ps1
+python scripts/deploy/deploy.py
 
 # SSH to instance
 ssh -i "$env:USERPROFILE\.ssh\ec2-key.pem" ec2-user@18.208.117.82
@@ -371,8 +371,8 @@ aws configure
 
 # Deploy to EC2
 cd ~/resulam_royalties
-chmod +x deploy.sh
-./deploy.sh
+chmod +x scripts/deploy/deploy.sh
+./scripts/deploy/deploy.sh
 
 # SSH to instance
 ssh -i ~/.ssh/ec2-key.pem ec2-user@18.208.117.82

@@ -43,5 +43,5 @@ echo DOMAIN_NAME: %DOMAIN_NAME%
 echo AWS_REGION: %AWS_REGION%
 echo.
 echo Run deployment with:
-echo   python deploy.py
+echo   python scripts/deploy/deploy.py
 echo.

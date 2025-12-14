@@ -2,7 +2,7 @@
 
 ## ONE-LINE DEPLOY
 ```powershell
-cd C:\Users\tcham\Wokspace\resulam_royalties; .\deploy.ps1
+cd C:\Users\tcham\Wokspace\resulam_royalties; python scripts/deploy/deploy.py
 ```
 
 ## What the Script Does (Automatic)

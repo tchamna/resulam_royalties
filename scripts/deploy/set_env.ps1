@@ -40,5 +40,5 @@ Write-Host "DOMAIN_NAME: $($env:DOMAIN_NAME)" -ForegroundColor Green
 Write-Host "AWS_REGION:  $($env:AWS_REGION)" -ForegroundColor Green
 Write-Host ""
 Write-Host "Run deployment with:" -ForegroundColor Yellow
-Write-Host "  python deploy.py"
+Write-Host "  python scripts/deploy/deploy.py"
 Write-Host ""

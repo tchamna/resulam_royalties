@@ -32,7 +32,7 @@ Before deploying, ensure you have:
 cd C:\Users\tcham\Wokspace\resulam_royalties
 
 # Run deployment script
-.\deploy.ps1
+python scripts/deploy/deploy.py
 ```
 
 The script will automatically:
@@ -55,10 +55,10 @@ The script will automatically:
 
 ```powershell
 # Use specific EC2 IP, user, and key
-.\deploy.ps1 -EC2_IP "18.208.117.82" -EC2_User "ec2-user" -KeyPath "C:\path\to\key.pem" -StartPort 8050
+python scripts/deploy/deploy.py -EC2_IP "18.208.117.82" -EC2_User "ec2-user" -KeyPath "C:\path\to\key.pem" -StartPort 8050
 
 # Use custom GitHub repository
-.\deploy.ps1 -Repository "your-username/your-repo"
+python scripts/deploy/deploy.py -Repository "your-username/your-repo"
 ```
 
 ### Parameter Reference
@@ -338,7 +338,7 @@ To redeploy with updated code:
 git pull origin main
 
 # Run deployment script again
-.\deploy.ps1
+python scripts/deploy/deploy.py
 ```
 
 The script will:
@@ -414,7 +414,7 @@ For issues or questions:
 By running this deployment script:
 
 **Local (on your machine):**
-- `./deploy.ps1` - Main deployment script
+- `python scripts/deploy/deploy.py` - Main deployment script
 - `./requirements.txt` - Python dependencies
 
 **On EC2 instance (automatic):**
