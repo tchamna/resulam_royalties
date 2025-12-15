@@ -24,20 +24,62 @@ def _is_private_or_loopback(ip: str) -> bool:
     return bool(addr.is_private or addr.is_loopback or addr.is_link_local)
 
 
+def _normalize_ip_candidate(candidate: str) -> str | None:
+    candidate = (candidate or "").strip().strip('"').strip("'")
+    if not candidate:
+        return None
+
+    # Common formats:
+    # - "1.2.3.4"
+    # - "1.2.3.4:12345"
+    # - "[2001:db8::1]:12345"
+    if candidate.startswith("[") and "]" in candidate:
+        host = candidate[1 : candidate.index("]")].strip()
+        return host or None
+
+    # If it looks like IPv4:port, strip the port.
+    if candidate.count(":") == 1 and "." in candidate:
+        host = candidate.split(":", 1)[0].strip()
+        return host or None
+
+    return candidate
+
+
 def get_client_ip(headers: Mapping[str, str], remote_addr: str | None) -> str:
     """
     Best-effort client IP extraction that supports common reverse-proxy headers.
     """
+    # Prefer CDN-provided "true client" headers when available (e.g., Cloudflare).
+    for key in ("CF-Connecting-IP", "True-Client-IP", "X-Client-IP", "X-Forwarded", "Forwarded"):
+        raw = headers.get(key)
+        if raw:
+            ip = _normalize_ip_candidate(raw)
+            if ip:
+                return ip
+
     xff = headers.get("X-Forwarded-For") or headers.get("X-FORWARDED-FOR")
     if xff:
+        candidates: list[str] = []
         for part in xff.split(","):
-            candidate = part.strip()
-            if candidate:
-                return candidate
+            ip = _normalize_ip_candidate(part)
+            if ip:
+                candidates.append(ip)
+
+        # Prefer the first public IP (avoid proxy/internal IPs).
+        for ip in candidates:
+            if not _is_private_or_loopback(ip):
+                return ip
+        if candidates:
+            return candidates[0]
+
     xrip = headers.get("X-Real-IP") or headers.get("X-REAL-IP")
     if xrip:
-        return xrip.strip()
-    return (remote_addr or "").strip() or "Unknown"
+        ip = _normalize_ip_candidate(xrip)
+        if ip:
+            return ip
+
+    ip = _normalize_ip_candidate(remote_addr or "")
+    return ip or "Unknown"
 
 
 def _country_from_headers(headers: Mapping[str, str]) -> str | None:
@@ -74,12 +116,12 @@ def get_country(headers: Mapping[str, str], remote_addr: str | None) -> str:
     lightweight geo lookup for public IPs. Falls back to "Local" / "Unknown".
     """
     from_headers = _country_from_headers(headers)
-    if from_headers:
+    if from_headers and len(from_headers) > 2:
         return from_headers
 
     ip = get_client_ip(headers, remote_addr)
     if ip == "Unknown":
-        return "Unknown"
+        return from_headers or "Unknown"
     if _is_private_or_loopback(ip):
         return "Local"
 
@@ -89,7 +131,7 @@ def get_country(headers: Mapping[str, str], remote_addr: str | None) -> str:
         if cached and (now - cached[1]) < _CACHE_TTL_SECONDS:
             return cached[0]
 
-    country = _fetch_country_from_ipapi(ip) or "Unknown"
+    country = _fetch_country_from_ipapi(ip) or (from_headers or "Unknown")
     with _LOCK:
         _IP_COUNTRY_CACHE[ip] = (country, now)
     return country
@@ -116,4 +158,3 @@ def active_summary(active_window_seconds: int = _DEFAULT_ACTIVE_WINDOW_SECONDS) 
 
     countries = Counter((info.get("country") or "Unknown") for info in active.values())
     return len(active), countries
-
