@@ -2,8 +2,7 @@ name: Deploy to EC2
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
     inputs:
       environment:
@@ -11,9 +10,7 @@ on:
         required: true
         default: production
         type: choice
-        options:
-          - production
-          - staging
+        options: [production, staging]
 
 jobs:
   deploy:
@@ -42,11 +39,6 @@ jobs:
           chmod 600 ~/.ssh/ec2-key.pem
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
-
       - name: Deploy to EC2 using Docker
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
@@ -61,98 +53,28 @@ jobs:
           OLD_DOMAIN_NAME: ${{ secrets.OLD_DOMAIN_NAME || '' }}
           CONFIGURE_NGINX: ${{ secrets.CONFIGURE_NGINX || 'false' }}
         run: |
-          echo "Deploying Docker container to EC2..."
+          set -euo pipefail
+          echo "Deploying to EC2..."
 
-          ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST << 'ENDSSH'
-            set -euo pipefail
-
-            cd '${{ env.APP_DIR }}'
-
-            # Remove local CSV exports (generated artifacts)
-            rm -f royalties_exploded_2024.csv royalties_per_author_2024.csv royalties_resulambooks_from_2015_2024_history_df.csv || true
-
-            git fetch origin main
-            git reset --hard origin/main
-            git clean -fd || true
-
-            # Ensure AWS credentials are configured for S3 access
-            mkdir -p ~/.aws
-            cat > ~/.aws/credentials <<CREDS
-            [default]
-            aws_access_key_id = ${{ secrets.AWS_ACCESS_KEY_ID }}
-            aws_secret_access_key = ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-CREDS
-            cat > ~/.aws/config <<CFG
-            [default]
-            region = ${{ env.AWS_REGION }}
-CFG
-            chmod 600 ~/.aws/credentials
-
-            aws sts get-caller-identity || echo "Warning: AWS credentials may not be configured correctly"
-
-            HOST_PORT='${{ env.HOST_PORT }}'
-            DASH_PORT='${{ env.DASH_PORT }}'
-            CONTAINER_NAME='${{ env.CONTAINER_NAME }}'
-
-            # Prevent accidental port conflicts (EC2 may host multiple apps)
-            if sudo netstat -tlnp 2>/dev/null | grep -q ":${HOST_PORT} .*LISTEN"; then
-              echo "ERROR: Port ${HOST_PORT} is already in use on this EC2 instance."
-              echo "Set the GitHub secret HOST_PORT to a free port (e.g. 8052, 8060, etc.) and re-run the workflow."
-              sudo netstat -tlnp 2>/dev/null | grep ":${HOST_PORT} .*LISTEN" || true
-              exit 1
-            fi
-
-            # Keep the previous image for rollback
-            if docker image inspect resulam-royalties:latest >/dev/null 2>&1; then
-              docker tag resulam-royalties:latest resulam-royalties:previous || true
-            fi
-
-            docker stop "${CONTAINER_NAME}" 2>/dev/null || true
-            docker rm "${CONTAINER_NAME}" 2>/dev/null || true
-
-            docker build -t resulam-royalties:latest .
-
-            docker run -d \
-              --name "${CONTAINER_NAME}" \
-              --restart unless-stopped \
-              -p 127.0.0.1:${HOST_PORT}:${DASH_PORT} \
-              -v ~/.aws:/root/.aws:ro \
-              -e USE_S3_DATA=true \
-              -e PUBLIC_BASE_URL='https://${{ env.DOMAIN_NAME }}' \
-              -e S3_BUCKET='${{ env.S3_BUCKET }}' \
-              -e AWS_DEFAULT_REGION='${{ env.AWS_REGION }}' \
-              -e AUTO_SYNC_INTERVAL=60 \
-              resulam-royalties:latest
-
-            echo "Waiting for container to start..."
-            sleep 5
-
-            if docker ps | grep -q "${CONTAINER_NAME}"; then
-              echo "Container is running."
-              echo ""
-              echo "Container logs (last 50 lines):"
-              docker logs "${CONTAINER_NAME}" --tail 50 || true
-            else
-              echo "ERROR: Container failed to start."
-              docker logs "${CONTAINER_NAME}" || true
-              docker ps -a | grep "${CONTAINER_NAME}" || true
-              exit 1
-            fi
-
-            # Optional: configure Nginx vhost for the domain -> localhost:${HOST_PORT}
-            if [ '${{ env.CONFIGURE_NGINX }}' = 'true' ]; then
-              echo ""
-              echo "Configuring Nginx reverse-proxy for ${{ env.DOMAIN_NAME }} -> 127.0.0.1:${HOST_PORT}"
-              chmod +x scripts/deploy/setup_nginx_vhost.sh || true
-              DOMAIN_NAME='${{ env.DOMAIN_NAME }}' \
-              OLD_DOMAIN_NAME='${{ env.OLD_DOMAIN_NAME }}' \
-              UPSTREAM_PORT="${HOST_PORT}" \
-              bash scripts/deploy/setup_nginx_vhost.sh
-            else
-              echo ""
-              echo "Nginx configuration skipped (set CONFIGURE_NGINX=true to enable)."
-            fi
-          ENDSSH
+          ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no "$EC2_USER@$EC2_HOST" "set -euo pipefail; \
+            cd '$APP_DIR'; \
+            rm -f royalties_exploded_2024.csv royalties_per_author_2024.csv royalties_resulambooks_from_2015_2024_history_df.csv || true; \
+            git fetch origin main; \
+            git reset --hard origin/main; \
+            git clean -fd || true; \
+            chmod +x scripts/deploy/deploy_docker_remote.sh scripts/deploy/setup_nginx_vhost.sh || true; \
+            AWS_ACCESS_KEY_ID='${{ secrets.AWS_ACCESS_KEY_ID }}' \
+            AWS_SECRET_ACCESS_KEY='${{ secrets.AWS_SECRET_ACCESS_KEY }}' \
+            AWS_REGION='$AWS_REGION' \
+            S3_BUCKET='$S3_BUCKET' \
+            CONTAINER_NAME='$CONTAINER_NAME' \
+            HOST_PORT='$HOST_PORT' \
+            DASH_PORT='$DASH_PORT' \
+            DOMAIN_NAME='$DOMAIN_NAME' \
+            OLD_DOMAIN_NAME='$OLD_DOMAIN_NAME' \
+            CONFIGURE_NGINX='$CONFIGURE_NGINX' \
+            PUBLIC_BASE_URL='https://$DOMAIN_NAME' \
+            bash scripts/deploy/deploy_docker_remote.sh"
 
       - name: Check application logs
         if: always()
@@ -162,23 +84,20 @@ CFG
           CONTAINER_NAME: ${{ secrets.CONTAINER_NAME || 'resulam-royalties' }}
           HOST_PORT: ${{ secrets.HOST_PORT || '8050' }}
         run: |
-          echo "Checking application status and logs..."
-          ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST << EOF
-            echo "=== Docker Container Status ==="
-            docker ps -a | grep "${CONTAINER_NAME}" || echo "Container not found"
-
-            echo ""
-            echo "=== Last 30 lines of container log ==="
-            docker logs "${CONTAINER_NAME}" --tail 30 2>&1 || echo "No logs available"
-
-            echo ""
-            echo "=== Container health status ==="
-            docker inspect --format='{{.State.Health.Status}}' "${CONTAINER_NAME}" 2>/dev/null || echo "Health check not available"
-
-            echo ""
-            echo "=== Checking if port ${HOST_PORT} is listening ==="
-            sudo netstat -tlnp | grep ":${HOST_PORT} " || echo "Port ${HOST_PORT} not listening"
-EOF
+          set -euo pipefail
+          echo "Checking container status and logs..."
+          ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no "$EC2_USER@$EC2_HOST" "\
+            echo '=== Docker Container Status ==='; \
+            docker ps -a | grep -F '$CONTAINER_NAME' || echo 'Container not found'; \
+            echo ''; \
+            echo '=== Last 30 lines of container log ==='; \
+            docker logs '$CONTAINER_NAME' --tail 30 2>&1 || true; \
+            echo ''; \
+            echo '=== Container health status ==='; \
+            docker inspect --format='{{.State.Health.Status}}' '$CONTAINER_NAME' 2>/dev/null || echo 'Health check not available'; \
+            echo ''; \
+            echo '=== Checking if port $HOST_PORT is listening ==='; \
+            sudo netstat -tlnp | grep ':$HOST_PORT ' || echo 'Port $HOST_PORT not listening'"
 
       - name: Verify deployment
         env:
@@ -187,44 +106,23 @@ EOF
           EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
           HOST_PORT: ${{ secrets.HOST_PORT || '8050' }}
         run: |
+          set -euo pipefail
           echo "Verifying application health..."
-          max_attempts=10
+          max_attempts=12
           for i in $(seq 1 $max_attempts); do
             if curl -sf "https://$DOMAIN_NAME/" > /dev/null 2>&1; then
               echo "OK: https://$DOMAIN_NAME"
               exit 0
             fi
-
-            if ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST "curl -sf http://127.0.0.1:$HOST_PORT/ >/dev/null 2>&1 && curl -sf http://127.0.0.1:$HOST_PORT/authors/ >/dev/null 2>&1"; then
+            if ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no "$EC2_USER@$EC2_HOST" "curl -sf http://127.0.0.1:$HOST_PORT/ >/dev/null 2>&1 && curl -sf http://127.0.0.1:$HOST_PORT/authors/ >/dev/null 2>&1"; then
               echo "OK: container is responding on localhost:$HOST_PORT"
               exit 0
             fi
-
-            echo "Attempt $i/$max_attempts: Waiting for application to start..."
+            echo "Attempt $i/$max_attempts: waiting..."
             sleep 5
           done
-
-          echo "ERROR: Application health check failed."
+          echo "ERROR: Health check failed"
           exit 1
-
-      - name: Notify deployment
-        if: always()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const status = '${{ job.status }}' === 'success' ? '✅ Success' : '❌ Failed';
-            const deployment = `
-            **Deployment Status:** ${status}
-
-            - **Commit:** ${{ github.sha }}
-            - **Branch:** ${{ github.ref_name }}
-            - **Author:** ${{ github.actor }}
-            - **EC2:** ${{ secrets.EC2_HOST }}
-            - **Domain:** ${{ secrets.DOMAIN_NAME || 'resulam-royalties.tchamna.com' }}
-            - **Time:** ${new Date().toUTCString()}
-            `;
-
-            core.notice(deployment);
 
   rollback:
     runs-on: ubuntu-latest
@@ -248,29 +146,21 @@ EOF
           CONTAINER_NAME: ${{ secrets.CONTAINER_NAME || 'resulam-royalties' }}
           HOST_PORT: ${{ secrets.HOST_PORT || '8050' }}
           DASH_PORT: ${{ secrets.DASH_PORT || '8050' }}
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME || 'resulam-royalties.tchamna.com' }}
         run: |
-          echo "Rollback: attempting to start resulam-royalties:previous"
-          ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST << 'EOF'
-            set -euo pipefail
-            if ! docker image inspect resulam-royalties:previous >/dev/null 2>&1; then
-              echo "No previous image found; rollback skipped."
-              exit 0
-            fi
-
-            CONTAINER_NAME='${{ secrets.CONTAINER_NAME || 'resulam-royalties' }}'
-            HOST_PORT='${{ secrets.HOST_PORT || '8050' }}'
-            DASH_PORT='${{ secrets.DASH_PORT || '8050' }}'
-
-            docker stop "${CONTAINER_NAME}" 2>/dev/null || true
-            docker rm "${CONTAINER_NAME}" 2>/dev/null || true
-
+          set -euo pipefail
+          echo "Rollback: starting resulam-royalties:previous if available"
+          ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no "$EC2_USER@$EC2_HOST" "set -euo pipefail; \
+            if ! docker image inspect resulam-royalties:previous >/dev/null 2>&1; then \
+              echo 'No previous image found; rollback skipped.'; \
+              exit 0; \
+            fi; \
+            docker stop '$CONTAINER_NAME' 2>/dev/null || true; \
+            docker rm '$CONTAINER_NAME' 2>/dev/null || true; \
             docker run -d \
-              --name "${CONTAINER_NAME}" \
+              --name '$CONTAINER_NAME' \
               --restart unless-stopped \
-              -p 127.0.0.1:${HOST_PORT}:${DASH_PORT} \
-              -e PUBLIC_BASE_URL='https://${{ secrets.DOMAIN_NAME || 'resulam-royalties.tchamna.com' }}' \
-              resulam-royalties:previous
-
-            echo "Rollback container started."
-            docker logs "${CONTAINER_NAME}" --tail 50 || true
-EOF
+              -p 127.0.0.1:$HOST_PORT:$DASH_PORT \
+              -e PUBLIC_BASE_URL='https://$DOMAIN_NAME' \
+              resulam-royalties:previous; \
+            docker logs '$CONTAINER_NAME' --tail 50 || true"
