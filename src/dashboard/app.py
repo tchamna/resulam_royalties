@@ -391,7 +391,7 @@ class ResulamDashboard:
             ),
             dcc.Interval(
                 id="device-warning-timer",
-                interval=15 * 1000,
+                interval=10 * 1000,
                 n_intervals=0,
                 max_intervals=1,
             ),
@@ -672,6 +672,7 @@ class ResulamDashboard:
         # Anchor + signal used for smooth-scroll on small screens when tabs change
         view_anchor = html.Div(id="tab-view-anchor")
         tab_scroll_signal = dcc.Store(id="tab-scroll-signal", data=0)
+        filter_scroll_signal = dcc.Store(id="filter-scroll-signal", data=0)
         
         # Content area that changes based on selected tab
         content = html.Div(id="tab-content", className="mb-4")
@@ -683,6 +684,7 @@ class ResulamDashboard:
             tabs,
             view_anchor,
             tab_scroll_signal,
+            filter_scroll_signal,
             sales_overview_section,
             content,
             
@@ -710,10 +712,15 @@ class ResulamDashboard:
                 icon="success",
                 style={"position": "fixed", "top": 66, "right": 10, "width": 350, "zIndex": 9999},
             ),
+            # Presence / online users
+            dcc.Store(id="client-id-store", storage_type="local"),
+            dcc.Interval(id="presence-heartbeat", interval=20 * 1000, n_intervals=0),
             
             # Footer
             html.Hr(),
             html.Footer([
+                html.P(id="online-users-summary", className="text-center text-muted small mb-1"),
+                html.P(id="online-users-countries", className="text-center text-muted small mb-2"),
                 html.P(
                     "© 2025 Resulam Books. Dashboard built with Dash & Plotly.",
                     className="text-center text-muted"
@@ -731,6 +738,53 @@ class ResulamDashboard:
         )
         def _hide_device_warning(n_intervals):
             return not bool(n_intervals)
+
+        # Client-side: ensure a stable per-browser user id (stored locally).
+        self.app.clientside_callback(
+            """
+            function(n, existing) {
+                if (existing) { return existing; }
+                try { return crypto.randomUUID(); } catch(e) {}
+                return 'cid-' + Math.random().toString(16).slice(2) + '-' + Date.now();
+            }
+            """,
+            Output("client-id-store", "data"),
+            Input("presence-heartbeat", "n_intervals"),
+            State("client-id-store", "data"),
+            prevent_initial_call=False,
+        )
+
+        # Server-side: update presence + footer summary.
+        @self.app.callback(
+            Output("online-users-summary", "children"),
+            Output("online-users-countries", "children"),
+            Input("presence-heartbeat", "n_intervals"),
+            Input("client-id-store", "data"),
+            prevent_initial_call=False,
+        )
+        def update_online_users(_n, client_id):
+            from flask import request
+            from src.dashboard.presence import active_summary, get_client_ip, get_country, touch
+
+            if not client_id:
+                return dash.no_update, dash.no_update
+
+            ip = get_client_ip(request.headers, request.remote_addr)
+            country = get_country(request.headers, request.remote_addr)
+            touch(client_id, ip, country)
+
+            count, countries = active_summary()
+            top = countries.most_common(5)
+            top_total = sum(n for _c, n in top)
+            others = max(0, sum(countries.values()) - top_total)
+
+            countries_parts = [f"{c} ({n})" for c, n in top if c]
+            if others:
+                countries_parts.append(f"Other ({others})")
+
+            summary = f"👥 Online now: {count} • You: {country}"
+            countries_line = "🌍 Countries: " + (", ".join(countries_parts) if countries_parts else "—")
+            return summary, countries_line
 
         # Smooth-scroll to the content when switching tabs on small screens
         self.app.clientside_callback(
@@ -750,6 +804,32 @@ class ResulamDashboard:
             """,
             Output("tab-scroll-signal", "data"),
             Input("dashboard-tabs", "active_tab"),
+            prevent_initial_call=True,
+        )
+
+        # Smooth-scroll to the content when changing filters on small screens
+        self.app.clientside_callback(
+            """
+            function(year, language, author, bookType, book, category) {
+                try {
+                    if (!window.matchMedia('(max-width: 768px)').matches) {
+                        return window.dash_clientside.no_update;
+                    }
+                    var el = document.getElementById('tab-view-anchor');
+                    if (el) {
+                        el.scrollIntoView({behavior: 'smooth', block: 'start'});
+                    }
+                } catch (e) {}
+                return Date.now();
+            }
+            """,
+            Output("filter-scroll-signal", "data"),
+            Input("year-filter", "value"),
+            Input("language-filter", "value"),
+            Input("author-filter", "value"),
+            Input("booktype-filter", "value"),
+            Input("book-filter", "value"),
+            Input("category-filter", "value"),
             prevent_initial_call=True,
         )
         
