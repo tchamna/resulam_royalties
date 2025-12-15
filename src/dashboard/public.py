@@ -337,7 +337,7 @@ class PublicDashboard:
             dbc.Row([
                 dbc.Col([
                     html.H1(
-                        "African Languages Libraries - By Resulam",
+                        "African Languages Library - By Resulam",
                         className="text-center text-light mb-4"
                     ),
                     html.P(
@@ -421,7 +421,7 @@ class PublicDashboard:
             ),
             dcc.Interval(
                 id="device-warning-timer",
-                interval=10 * 1000,
+                interval=8 * 1000,
                 n_intervals=0,
                 max_intervals=1,
             ),
@@ -747,9 +747,23 @@ class PublicDashboard:
         self.app.clientside_callback(
             """
             function(n, existing) {
-                if (existing) { return existing; }
-                try { return crypto.randomUUID(); } catch(e) {}
-                return 'cid-' + Math.random().toString(16).slice(2) + '-' + Date.now();
+                var key = 'resulam_client_id';
+                try {
+                    if (existing) {
+                        try { window.localStorage.setItem(key, existing); } catch (e) {}
+                        return existing;
+                    }
+                    var saved = null;
+                    try { saved = window.localStorage.getItem(key); } catch (e) {}
+                    if (saved) { return saved; }
+                    var id = null;
+                    try { id = crypto.randomUUID(); } catch(e) {}
+                    if (!id) { id = 'cid-' + Math.random().toString(16).slice(2) + '-' + Date.now(); }
+                    try { window.localStorage.setItem(key, id); } catch (e) {}
+                    return id;
+                } catch (e) {
+                    return existing || ('cid-' + Math.random().toString(16).slice(2) + '-' + Date.now());
+                }
             }
             """,
             Output("client-id-store", "data"),

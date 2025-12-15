@@ -45,23 +45,64 @@ def _normalize_ip_candidate(candidate: str) -> str | None:
     return candidate
 
 
+def _validate_ip(ip: str | None) -> str | None:
+    ip = _normalize_ip_candidate(ip or "")
+    if not ip or ip.lower() == "unknown":
+        return None
+    try:
+        ipaddress.ip_address(ip)
+        return ip
+    except ValueError:
+        return None
+
+
+def _extract_ip_from_forwarded_header(forwarded: str) -> str | None:
+    """
+    Parse RFC 7239 Forwarded header to extract the first `for=` IP (if present).
+
+    Example:
+      Forwarded: for=192.0.2.60;proto=https;by=203.0.113.43
+      Forwarded: for=\"[2001:db8:cafe::17]:4711\";proto=http
+    """
+    if not forwarded:
+        return None
+
+    first_element = forwarded.split(",", 1)[0]
+    for part in first_element.split(";"):
+        part = part.strip()
+        if part.lower().startswith("for="):
+            raw = part[4:].strip()
+            if raw.startswith('"') and raw.endswith('"') and len(raw) >= 2:
+                raw = raw[1:-1]
+            if raw.lower() == "unknown":
+                return None
+            return _normalize_ip_candidate(raw)
+
+    return None
+
+
 def get_client_ip(headers: Mapping[str, str], remote_addr: str | None) -> str:
     """
     Best-effort client IP extraction that supports common reverse-proxy headers.
     """
     # Prefer CDN-provided "true client" headers when available (e.g., Cloudflare).
-    for key in ("CF-Connecting-IP", "True-Client-IP", "X-Client-IP", "X-Forwarded", "Forwarded"):
+    for key in ("CF-Connecting-IP", "True-Client-IP", "X-Client-IP"):
         raw = headers.get(key)
         if raw:
-            ip = _normalize_ip_candidate(raw)
+            ip = _validate_ip(raw)
             if ip:
                 return ip
+
+    forwarded = headers.get("Forwarded")
+    ip = _validate_ip(_extract_ip_from_forwarded_header(forwarded or ""))
+    if ip:
+        return ip
 
     xff = headers.get("X-Forwarded-For") or headers.get("X-FORWARDED-FOR")
     if xff:
         candidates: list[str] = []
         for part in xff.split(","):
-            ip = _normalize_ip_candidate(part)
+            ip = _validate_ip(part)
             if ip:
                 candidates.append(ip)
 
@@ -74,11 +115,11 @@ def get_client_ip(headers: Mapping[str, str], remote_addr: str | None) -> str:
 
     xrip = headers.get("X-Real-IP") or headers.get("X-REAL-IP")
     if xrip:
-        ip = _normalize_ip_candidate(xrip)
+        ip = _validate_ip(xrip)
         if ip:
             return ip
 
-    ip = _normalize_ip_candidate(remote_addr or "")
+    ip = _validate_ip(remote_addr or "")
     return ip or "Unknown"
 
 
