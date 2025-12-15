@@ -326,6 +326,25 @@ class ResulamDashboard:
                     )
                 ], width=2, className="text-end")
             ]),
+            dbc.Alert(
+                "💻 For the best experience, please use a laptop or desktop computer.",
+                id="device-warning-banner",
+                is_open=True,
+                color="info",
+                className="d-md-none text-center mx-auto mt-2 mb-0",
+                style={
+                    "maxWidth": "720px",
+                    "color": "#ffc107",
+                    "backgroundColor": "rgba(0, 0, 0, 0.35)",
+                    "border": "1px solid #ffc107",
+                },
+            ),
+            dcc.Interval(
+                id="device-warning-timer",
+                interval=15 * 1000,
+                n_intervals=0,
+                max_intervals=1,
+            ),
             dcc.Store(id="theme-store", data="dark")
         ], fluid=True, className="bg-dark py-4 mb-4", id="header-container")
         
@@ -648,6 +667,14 @@ class ResulamDashboard:
     
     def _register_callbacks(self):
         """Register all dashboard callbacks"""
+
+        @self.app.callback(
+            Output("device-warning-banner", "is_open"),
+            Input("device-warning-timer", "n_intervals"),
+            prevent_initial_call=False,
+        )
+        def _hide_device_warning(n_intervals):
+            return not bool(n_intervals)
         
         # Server-side callback to check for container restarts by checking start time
         @self.app.callback(
