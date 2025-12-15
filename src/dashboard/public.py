@@ -587,6 +587,10 @@ class PublicDashboard:
             dbc.Tab(label="📖 Books Analysis", tab_id="books"),
             dbc.Tab(label="🌍 Geographic Distribution", tab_id="geography"),
         ], id="dashboard-tabs", active_tab="purchase", className="mb-4")
+
+        # Anchor + signal used for smooth-scroll on small screens when tabs change
+        view_anchor = html.Div(id="tab-view-anchor")
+        tab_scroll_signal = dcc.Store(id="tab-scroll-signal", data=0)
         
         # Content area that changes based on selected tab
         content = html.Div(id="tab-content", className="mb-4")
@@ -596,6 +600,8 @@ class PublicDashboard:
             header,
             filter_section,
             tabs,
+            view_anchor,
+            tab_scroll_signal,
             kpi_section,
             sales_overview_section,
             content,
@@ -648,6 +654,27 @@ class PublicDashboard:
         )
         def _hide_device_warning(n_intervals):
             return not bool(n_intervals)
+
+        # Smooth-scroll to the content when switching tabs on small screens
+        self.app.clientside_callback(
+            """
+            function(activeTab) {
+                try {
+                    if (!window.matchMedia('(max-width: 768px)').matches) {
+                        return window.dash_clientside.no_update;
+                    }
+                    var el = document.getElementById('tab-view-anchor');
+                    if (el) {
+                        el.scrollIntoView({behavior: 'smooth', block: 'start'});
+                    }
+                } catch (e) {}
+                return Date.now();
+            }
+            """,
+            Output("tab-scroll-signal", "data"),
+            Input("dashboard-tabs", "active_tab"),
+            prevent_initial_call=True,
+        )
         
         # Server-side callback to check for container restarts by checking start time
         @self.app.callback(
