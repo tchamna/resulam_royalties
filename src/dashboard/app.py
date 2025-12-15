@@ -117,7 +117,7 @@ def count_unique_normalized_authors(authors_series: pd.Series) -> int:
 class ResulamDashboard:
     """Main dashboard application class"""
     
-    def __init__(self, data: Dict[str, pd.DataFrame]):
+    def __init__(self, data: Dict[str, pd.DataFrame], server=None, prefix: str = "/"):
         """
         Initialize dashboard with processed data
         
@@ -136,11 +136,22 @@ class ResulamDashboard:
         
         # Initialize Dash app with Bootstrap theme (DARKLY for dark mode by default)
         assets_path = Path(__file__).parent.parent.parent / 'assets'
+
+        # When mounting multiple Dash apps on the same Flask server, give the assets
+        # a unique URL path per prefix to avoid blueprint name collisions.
+        assets_url_path = "/assets"
+        if server is not None and prefix != "/":
+            assets_url_path = f"{prefix.rstrip('/')}/assets"
+
+        dash_name = "authors_dashboard"
         self.app = dash.Dash(
-            __name__,
+            dash_name,
+            server=(True if server is None else server),
+            requests_pathname_prefix=prefix,
             external_stylesheets=[dbc.themes.DARKLY, dbc.icons.FONT_AWESOME],
             suppress_callback_exceptions=True,
-            assets_folder=str(assets_path)
+            assets_folder=str(assets_path),
+            assets_url_path=assets_url_path,
         )
         
         # Set secret key for session persistence across restarts
@@ -2486,7 +2497,7 @@ class ResulamDashboard:
             sales_fig = empty_fig
             revenue_fig = empty_fig
         else:
-            sales_fig = GeographicCharts.sales_by_marketplace(data)
+            sales_fig = GeographicCharts.sales_by_marketplace_bar(data)
             revenue_fig = GeographicCharts.revenue_by_marketplace(data)
             
         return dbc.Container([
@@ -2948,14 +2959,20 @@ class ResulamDashboard:
         self.app.run(debug=debug, host=host, port=port)
 
 
-def create_dashboard(data: Dict[str, pd.DataFrame]) -> ResulamDashboard:
+def create_dashboard(
+    data: Dict[str, pd.DataFrame],
+    server=None,
+    prefix: str = "/"
+) -> ResulamDashboard:
     """
     Factory function to create dashboard instance
     
     Args:
         data: Dictionary containing processed dataframes
+        server: Optional Flask server to attach the Dash app to
+        prefix: URL prefix for the app (e.g. "/authors/")
         
     Returns:
         ResulamDashboard instance
     """
-    return ResulamDashboard(data)
+    return ResulamDashboard(data, server=server, prefix=prefix)

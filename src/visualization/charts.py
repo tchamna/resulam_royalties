@@ -621,6 +621,41 @@ class GeographicCharts:
         )
         
         return fig
+
+    @staticmethod
+    def sales_by_marketplace_bar(df: pd.DataFrame) -> go.Figure:
+        """Create bar chart of sales (units) by marketplace"""
+        marketplace_sales = df.groupby('Marketplace')['Net Units Sold'].sum().reset_index()
+        marketplace_sales = marketplace_sales.sort_values(by='Net Units Sold', ascending=False)
+
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=marketplace_sales['Marketplace'],
+            y=marketplace_sales['Net Units Sold'],
+            text=[f"{int(val):,}" for val in marketplace_sales['Net Units Sold']],
+            textposition='outside',
+            textfont=dict(size=10),
+            hovertemplate='<b>%{x}</b><br>Books Sold: %{y:,}<extra></extra>',
+            cliponaxis=False,
+            marker_color='rgba(100, 200, 140, 0.7)'
+        ))
+
+        fig.update_layout(
+            title='Sales Distribution by Marketplace',
+            xaxis_title='Marketplace',
+            yaxis_title='Books Sold',
+            height=450,
+            xaxis=dict(
+                tickangle=-45,
+                automargin=True,
+                tickfont=dict(size=10)
+            ),
+            yaxis=dict(automargin=True),
+            template=VIZ_CONFIG['template'],
+            margin=dict(b=100)
+        )
+
+        return fig
     
     @staticmethod
     def revenue_by_marketplace(df: pd.DataFrame) -> go.Figure:

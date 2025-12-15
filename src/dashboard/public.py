@@ -117,7 +117,7 @@ def count_unique_normalized_authors(authors_series: pd.Series) -> int:
 class PublicDashboard:
     """Public dashboard application class - customized for external audiences"""
     
-    def __init__(self, data: Dict[str, pd.DataFrame]):
+    def __init__(self, data: Dict[str, pd.DataFrame], server=None, prefix: str = "/"):
         """
         Initialize dashboard with processed data
         
@@ -136,11 +136,22 @@ class PublicDashboard:
         
         # Initialize Dash app with Bootstrap theme (DARKLY for dark mode by default)
         assets_path = Path(__file__).parent.parent.parent / 'assets'
+
+        # When mounting multiple Dash apps on the same Flask server, give the assets
+        # a unique URL path per prefix to avoid blueprint name collisions.
+        assets_url_path = "/assets"
+        if server is not None and prefix != "/":
+            assets_url_path = f"{prefix.rstrip('/')}/assets"
+
+        dash_name = "public_dashboard"
         self.app = dash.Dash(
-            __name__,
+            dash_name,
+            server=(True if server is None else server),
+            requests_pathname_prefix=prefix,
             external_stylesheets=[dbc.themes.DARKLY, dbc.icons.FONT_AWESOME],
             suppress_callback_exceptions=True,
-            assets_folder=str(assets_path)
+            assets_folder=str(assets_path),
+            assets_url_path=assets_url_path,
         )
         
         # Set secret key for session persistence across restarts
@@ -1978,6 +1989,49 @@ class PublicDashboard:
         """Create books analysis tab content"""
         if data is None:
             data = self.royalties
+
+        def _auto_md_cols(n: int) -> int:
+            if n <= 1:
+                return 12
+            if n == 2:
+                return 6
+            if n == 3:
+                return 4
+            if n == 4:
+                return 3
+            return 3
+
+        ebook_vs_physical_cards = [
+            dbc.Card(
+                dbc.CardBody([
+                    dcc.Graph(
+                        figure=SalesCharts.ebook_vs_physical_pie(data),
+                        config={'displayModeBar': False}
+                    )
+                ]),
+                className="shadow-sm mb-4",
+            ),
+            dbc.Card(
+                dbc.CardBody([
+                    dcc.Graph(
+                        figure=SalesCharts.ebook_vs_physical_by_year(data),
+                        config={'displayModeBar': False}
+                    )
+                ]),
+                className="shadow-sm mb-4",
+            ),
+            # dbc.Card(
+            #     dbc.CardBody([
+            #         dcc.Graph(
+            #             figure=SalesCharts.ebook_vs_physical_revenue(data),
+            #             config={'displayModeBar': False}
+            #         )
+            #     ]),
+            #     className="shadow-sm mb-4",
+            # ),
+        ]
+        ebook_vs_physical_md = _auto_md_cols(len(ebook_vs_physical_cards))
+
         return dbc.Container([
             # Total Sales by Book section
             dbc.Row([
@@ -2001,38 +2055,10 @@ class PublicDashboard:
                     html.H4("📱 eBook vs 📖 Physical Books Analysis", className="mb-3 mt-2")
                 ])
             ]),
-            dbc.Row([
-                dbc.Col([
-                    dbc.Card([
-                        dbc.CardBody([
-                            dcc.Graph(
-                                figure=SalesCharts.ebook_vs_physical_pie(data),
-                                config={'displayModeBar': False}
-                            )
-                        ])
-                    ], className="shadow-sm mb-4")
-                ], md=4),
-                dbc.Col([
-                    dbc.Card([
-                        dbc.CardBody([
-                            dcc.Graph(
-                                figure=SalesCharts.ebook_vs_physical_by_year(data),
-                                config={'displayModeBar': False}
-                            )
-                        ])
-                    ], className="shadow-sm mb-4")
-                ], md=4),
-                dbc.Col([
-                    dbc.Card([
-                        dbc.CardBody([
-                            dcc.Graph(
-                                figure=SalesCharts.ebook_vs_physical_revenue(data),
-                                config={'displayModeBar': False}
-                            )
-                        ])
-                    ], className="shadow-sm mb-4")
-                ], md=4)
-            ]),
+            dbc.Row(
+                [dbc.Col(card, md=ebook_vs_physical_md) for card in ebook_vs_physical_cards],
+                className="g-4",
+            ),
             # Summary statistics
             dbc.Row([
                 dbc.Col([
@@ -2073,7 +2099,6 @@ class PublicDashboard:
                 html.Th("Format"),
                 html.Th("Units Sold"),
                 html.Th("% of Sales"),
-                html.Th("Revenue (USD)"),
                 html.Th("Avg Price/Unit")
             ])),
             html.Tbody([
@@ -2081,28 +2106,24 @@ class PublicDashboard:
                     html.Td("📱 eBook"),
                     html.Td(f"{ebook_units:,}"),
                     html.Td(f"{(ebook_units/total_units*100) if total_units > 0 else 0:.1f}%"),
-                    html.Td(f"${ebook_revenue:,.2f}"),
                     html.Td(f"${(ebook_revenue/ebook_units) if ebook_units > 0 else 0:.2f}")
                 ]),
                 html.Tr([
                     html.Td("📖 Paperback"),
                     html.Td(f"{paper_units:,}"),
                     html.Td(f"{(paper_units/total_units*100) if total_units > 0 else 0:.1f}%"),
-                    html.Td(f"${paper_revenue:,.2f}"),
                     html.Td(f"${(paper_revenue/paper_units) if paper_units > 0 else 0:.2f}")
                 ]),
                 html.Tr([
                     html.Td("📕 Hardcover"),
                     html.Td(f"{hardcover_units:,}"),
                     html.Td(f"{(hardcover_units/total_units*100) if total_units > 0 else 0:.1f}%"),
-                    html.Td(f"${hardcover_revenue:,.2f}"),
                     html.Td(f"${(hardcover_revenue/hardcover_units) if hardcover_units > 0 else 0:.2f}")
                 ]),
                 html.Tr([
                     html.Td(html.Strong("Total")),
                     html.Td(html.Strong(f"{total_units:,}")),
                     html.Td(html.Strong("100%")),
-                    html.Td(html.Strong(f"${ebook_revenue + physical_revenue:,.2f}")),
                     html.Td("")
                 ], style={"backgroundColor": "#f8f9fa"})
             ])
@@ -2323,7 +2344,6 @@ class PublicDashboard:
         
         # Calculate totals for titles
         total_sales = int(data['Net Units Sold'].sum()) if len(data) > 0 else 0
-        total_revenue = data['Royalty USD'].sum() if len(data) > 0 else 0.0
         
         # Create empty figure for when there's no data
         if len(data) == 0:
@@ -2341,36 +2361,23 @@ class PublicDashboard:
                 }],
                 height=400
             )
-            sales_fig = empty_fig
-            revenue_fig = empty_fig
+            marketplace_fig = empty_fig
         else:
-            sales_fig = GeographicCharts.sales_by_marketplace(data)
-            revenue_fig = GeographicCharts.revenue_by_marketplace(data)
+            marketplace_fig = GeographicCharts.sales_by_marketplace_bar(data)
             
         return dbc.Container([
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader(html.H4(f"🌍 Sales Distribution by Marketplace ({filter_text}): {total_sales:,} books")),
+                        dbc.CardHeader(html.H4(f"🛒 Sales Distribution by Marketplace ({filter_text}): {total_sales:,} books")),
                         dbc.CardBody([
                             dcc.Graph(
-                                figure=sales_fig,
+                                figure=marketplace_fig,
                                 config={'displayModeBar': False}
                             )
                         ])
                     ], className="shadow-sm mb-4")
-                ], md=6),
-                dbc.Col([
-                    dbc.Card([
-                        dbc.CardHeader(html.H4(f"💵 Revenue by Marketplace ({filter_text}): ${total_revenue:,.2f}")),
-                        dbc.CardBody([
-                            dcc.Graph(
-                                figure=revenue_fig,
-                                config={'displayModeBar': False}
-                            )
-                        ])
-                    ], className="shadow-sm mb-4")
-                ], md=6)
+                ], md=12)
             ])
         ], fluid=True)
     
@@ -2806,14 +2813,29 @@ class PublicDashboard:
         self.app.run(debug=debug, host=host, port=port)
 
 
-def create_dashboard(data: Dict[str, pd.DataFrame]) -> PublicDashboard:
+def create_public_dashboard(
+    data: Dict[str, pd.DataFrame],
+    server=None,
+    prefix: str = "/"
+) -> PublicDashboard:
     """
     Factory function to create public dashboard instance
     
     Args:
         data: Dictionary containing processed dataframes
+        server: Optional Flask server to attach the Dash app to
+        prefix: URL prefix for the app (e.g. "/" or "/shop/")
         
     Returns:
         PublicDashboard instance
     """
-    return PublicDashboard(data)
+    return PublicDashboard(data, server=server, prefix=prefix)
+
+
+# Backwards compatibility alias
+def create_dashboard(
+    data: Dict[str, pd.DataFrame],
+    server=None,
+    prefix: str = "/"
+) -> PublicDashboard:
+    return create_public_dashboard(data, server=server, prefix=prefix)

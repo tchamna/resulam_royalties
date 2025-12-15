@@ -68,6 +68,15 @@ class DataCleaner:
         """Normalize book titles"""
         for old_title, new_title in TITLE_NORMALIZATION.items():
             df[column] = df[column].str.replace(old_title, new_title, regex=False)
+
+        # Fix accidental duplication caused by substring replacements where the expanded
+        # suffix already exists in the original title (e.g. yemba phrasebook).
+        # Collapse repeated ": French-Yemba-English Phrasebook" segments into one.
+        df[column] = df[column].str.replace(
+            r"(?:\s*:\s*French-Yemba-English Phrasebook)+",
+            ": French-Yemba-English Phrasebook",
+            regex=True,
+        )
         
         # Just strip whitespace - don't split on en-dash as it breaks nickname matching
         df[column] = df[column].str.strip()

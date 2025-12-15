@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Main application entry point for Resulam Royalties Dashboard
@@ -10,6 +10,8 @@ import sys
 import os
 import argparse
 from pathlib import Path
+from flask import redirect
+from werkzeug.middleware.dispatcher import DispatcherMiddleware
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -34,6 +36,18 @@ from src.config import (
 )
 
 
+def _run_public_app(data, host: str, port: int, debug: bool):
+    """Run public dashboard in its own process."""
+    dashboard = create_public_dashboard(data)
+    dashboard.run(host=host, port=port, debug=debug)
+
+
+def _run_authors_app(data, host: str, port: int, debug: bool):
+    """Run authors dashboard in its own process."""
+    dashboard = create_dashboard(data)
+    dashboard.run(host=host, port=port, debug=debug)
+
+
 def main():
     """Main application function"""
     
@@ -52,9 +66,12 @@ def main():
     parser = argparse.ArgumentParser(description='Resulam Royalties Dashboard')
     parser.add_argument('--host', type=str, default='127.0.0.1', help='Host to bind to (default: 127.0.0.1)')
     parser.add_argument('--port', type=int, default=8050, help='Port to bind to (default: 8050)')
+    parser.add_argument('--authors-port', type=int, default=8051, help='Port for authors app when running both')
+    parser.add_argument('--public-port', type=int, default=8050, help='Port for public app when running both')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     parser.add_argument('--public', action='store_true', help='Run public dashboard only')
     parser.add_argument('--authors', action='store_true', help='Run authors dashboard only')
+    parser.add_argument('--dual', action='store_true', default=False, help='Run public and authors dashboards on separate ports')
     args = parser.parse_args()
     
     print("\n" + "="*70)
@@ -106,19 +123,53 @@ def main():
     # Create and run dashboard
     print("\n🚀 Starting dashboard...")
     try:
-        if args.public:
+        if args.dual:
+            # Run two independent Dash apps on separate ports
+            from multiprocessing import Process
+
+            print("   Mode: DUAL INSTANCES")
+            print(f"   Public  : http://{args.host}:{args.public_port}/")
+            print(f"   Authors : http://{args.host}:{args.authors_port}/")
+            p1 = Process(target=_run_public_app, args=(data, args.host, args.public_port, args.debug))
+            p2 = Process(target=_run_authors_app, args=(data, args.host, args.authors_port, args.debug))
+            p1.start()
+            p2.start()
+            p1.join()
+            p2.join()
+        elif args.public:
             print("   Mode: PUBLIC DASHBOARD ONLY")
             dashboard = create_public_dashboard(data)
+            dashboard.run(host=args.host, port=args.port, debug=args.debug)
         elif args.authors:
             print("   Mode: AUTHORS DASHBOARD ONLY")
             dashboard = create_dashboard(data)
+            dashboard.run(host=args.host, port=args.port, debug=args.debug)
         else:
-            print("   Mode: MULTI-PAGE DASHBOARD")
+            print("   Mode: SINGLE PORT (WSGI dispatcher)")
             print("   Routes:")
-            print("     - http://localhost:8050/ - Public Shop")
-            print("     - http://localhost:8050/authors - Authors Analytics")
-            dashboard = create_multi_page_dashboard(data)
-        dashboard.run(host=args.host, port=args.port, debug=args.debug)
+            print(f"     - http://{args.host}:{args.port}/        (Public)")
+            print(f"     - http://{args.host}:{args.port}/authors/ (Authors)")
+
+            # Build two independent Dash apps and dispatch them via Werkzeug
+            public_dashboard = create_public_dashboard(data, prefix="/")
+            authors_dashboard = create_dashboard(data, prefix="/authors/")
+
+            # Use the public Dash Flask server as the base app
+            server = public_dashboard.app.server
+
+            @server.route("/authors")
+            def _authors_redirect():
+                return redirect("/authors/")
+
+            # Mount the authors Dash app at /authors
+            server.wsgi_app = DispatcherMiddleware(
+                server.wsgi_app,
+                {
+                    "/authors": authors_dashboard.app.server,
+                },
+            )
+
+            server.run(host=args.host, port=args.port, debug=args.debug)
     except Exception as e:
         print(f"\n❌ Error starting dashboard: {e}")
         raise
