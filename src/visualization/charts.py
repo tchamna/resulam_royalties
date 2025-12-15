@@ -6,7 +6,13 @@ import plotly.express as px
 import plotly.graph_objects as go
 from typing import List, Optional
 
-from ..config import VIZ_CONFIG, CURRENT_YEAR, AUTHOR_NORMALIZATION, NET_REVENUE_PERCENTAGE
+from ..config import (
+    VIZ_CONFIG,
+    CURRENT_YEAR,
+    AUTHOR_NORMALIZATION,
+    NET_REVENUE_PERCENTAGE,
+    MARKETPLACE_COUNTRY_MAPPING,
+)
 
 
 class SalesCharts:
@@ -653,6 +659,51 @@ class GeographicCharts:
             yaxis=dict(automargin=True),
             template=VIZ_CONFIG['template'],
             margin=dict(b=100)
+        )
+
+        return fig
+
+    @staticmethod
+    def sales_by_country_heatmap(df: pd.DataFrame) -> go.Figure:
+        """Create choropleth heatmap of books sold by country (derived from marketplace)."""
+        df_country = df.copy()
+        df_country['Country'] = df_country['Marketplace'].map(MARKETPLACE_COUNTRY_MAPPING)
+        df_country['Country'] = df_country['Country'].fillna('Other')
+
+        country_sales = (
+            df_country.groupby('Country')['Net Units Sold']
+            .sum()
+            .reset_index()
+            .sort_values(by='Net Units Sold', ascending=False)
+        )
+
+        # Exclude non-mappable bucket
+        country_sales = country_sales[country_sales['Country'] != 'Other']
+
+        fig = px.choropleth(
+            country_sales,
+            locations='Country',
+            locationmode='country names',
+            color='Net Units Sold',
+            hover_name='Country',
+            # High sales => red
+            color_continuous_scale='YlOrRd',
+            template=VIZ_CONFIG['template'],
+        )
+
+        fig.update_traces(
+            hovertemplate='<b>%{location}</b><br>Books Sold: %{z:,}<extra></extra>'
+        )
+        fig.update_geos(
+            showframe=False,
+            showcountries=True,
+            projection_type='natural earth',
+        )
+        fig.update_layout(
+            title='Sales Heatmap by Country',
+            height=520,
+            margin=dict(l=0, r=0, t=60, b=0),
+            coloraxis_colorbar=dict(title="Books Sold"),
         )
 
         return fig

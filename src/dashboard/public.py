@@ -563,7 +563,7 @@ class PublicDashboard:
         
         # Tabs for different views - PUBLIC VERSION (removed Authors Analysis and Earning History)
         tabs = dbc.Tabs([
-            dbc.Tab(label="🛒 Purchase the Book", tab_id="purchase"),
+            dbc.Tab(label="🛒 African Languages Books", tab_id="purchase"),
             dbc.Tab(label="📊 Sales Overview", tab_id="sales"),
             dbc.Tab(label="📖 Books Analysis", tab_id="books"),
             dbc.Tab(label="🌍 Geographic Distribution", tab_id="geography"),
@@ -2368,8 +2368,10 @@ class PublicDashboard:
                 height=400
             )
             marketplace_fig = empty_fig
+            country_fig = empty_fig
         else:
             marketplace_fig = GeographicCharts.sales_by_marketplace_bar(data)
+            country_fig = GeographicCharts.sales_by_country_heatmap(data)
             
         return dbc.Container([
             dbc.Row([
@@ -2379,6 +2381,19 @@ class PublicDashboard:
                         dbc.CardBody([
                             dcc.Graph(
                                 figure=marketplace_fig,
+                                config={'displayModeBar': False}
+                            )
+                        ])
+                    ], className="shadow-sm mb-4")
+                ], md=12)
+            ]),
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader(html.H4(f"🗺️ Sales Heatmap by Country ({filter_text}): {total_sales:,} books")),
+                        dbc.CardBody([
+                            dcc.Graph(
+                                figure=country_fig,
                                 config={'displayModeBar': False}
                             )
                         ])
