@@ -174,9 +174,17 @@ class PublicDashboard:
                 {%metas%}
                 <title>{%title%}</title>
                 <link rel="icon" type="image/png" href="assets/resulam_logo_egg.png" />
+                <link rel="apple-touch-icon" href="assets/resulam_logo_egg.png" />
                 {%css%}
                 <meta property="og:title" content="African Languages Books - Resulam" />
+                <meta property="og:site_name" content="Resulam" />
+                <meta property="og:type" content="website" />
+                <meta property="og:description" content="African Languages Libraries by Resulam: explore books, sales trends, and geographic distribution." />
+                <meta property="og:image" content="assets/resulam_logo_egg.png" />
+                <meta property="og:image:alt" content="Resulam" />
                 <meta name="twitter:title" content="African Languages Books - Resulam" />
+                <meta name="twitter:card" content="summary" />
+                <meta name="twitter:image" content="assets/resulam_logo_egg.png" />
                 <style>
                     body.light-mode {
                         background-color: #f8f9fa !important;
