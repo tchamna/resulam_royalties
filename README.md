@@ -38,6 +38,7 @@ For detailed documentation, setup instructions, and feature descriptions, see:
 
 - **Multi-Page Architecture**: Separate public and internal dashboards
 - **Interactive Analytics**: Advanced filtering and visualizations
+- **Dynamic Titles**: Chart/section titles reflect active filters
 - **Real-time Data**: Live exchange rate integration
 - **Export Capabilities**: CSV data export functionality
 - **Responsive Design**: Modern Bootstrap-based UI

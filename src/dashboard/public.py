@@ -526,7 +526,7 @@ class PublicDashboard:
         sales_by_language_section = dbc.Card([
             dbc.CardHeader(
                 dbc.Row([
-                    dbc.Col(html.H5("🌐 Sales by Language", className="mb-0"), md=8, xs=12),
+                    dbc.Col(html.H5("🌐 Sales by Language", id="sales-by-language-title", className="mb-0"), md=8, xs=12),
                     dbc.Col(
                         dcc.Dropdown(
                             id="sales-language-display-mode",
@@ -1180,38 +1180,28 @@ class PublicDashboard:
             return trend_title, fig
         
         @self.app.callback(
+            Output("sales-by-language-title", "children"),
             Output("sales-by-language-chart", "figure"),
             Input("year-filter-store", "data"),
             Input("language-filter", "value"),
             Input("author-filter", "value"),
             Input("booktype-filter", "value"),
             Input("book-filter", "value"),
+            Input("category-filter", "value"),
             Input("sales-language-display-mode", "value"),
             Input("data-refresh-signal", "data"),
             prevent_initial_call=False
         )
-        def update_sales_by_language(selected_years, selected_language, selected_author, selected_booktype, selected_book, display_mode, refresh_signal):
+        def update_sales_by_language(selected_years, selected_language, selected_author, selected_booktype, selected_book, selected_category, display_mode, refresh_signal):
             """Update sales by language stacked chart by year"""
-            if not selected_years:
-                filtered_df = self.royalties
-            else:
-                filtered_df = self.royalties[self.royalties['Year Sold'].isin(selected_years)]
-            
-            # Apply language filter
-            if selected_language and selected_language != "all":
-                filtered_df = filtered_df[filtered_df['Language'] == selected_language]
-            
-            # Apply author filter
-            if selected_author and selected_author != "all":
-                filtered_df = filter_by_author(filtered_df, selected_author, 'Authors')
-            
-            # Apply book type filter
-            if selected_booktype and selected_booktype != "all":
-                filtered_df = filtered_df[filtered_df['BookType'] == selected_booktype]
-            
-            # Apply book filter
-            if selected_book and selected_book != "all":
-                filtered_df = filtered_df[filtered_df['book_nick_name'] == selected_book]
+            filtered_df, _ = _get_filtered_data(
+                selected_years,
+                selected_language,
+                selected_author,
+                selected_booktype,
+                selected_book,
+                selected_category,
+            )
             
             # Build filter text for title
             filter_parts = []
@@ -1227,7 +1217,13 @@ class PublicDashboard:
                 filter_parts.append("📱 eBook" if selected_booktype == "Ebook" else "📖 Physical")
             if selected_book and selected_book != "all":
                 filter_parts.append(selected_book)
+            if selected_category and selected_category != "all":
+                filter_parts.append(f"📚 {selected_category}")
             filter_text = " | ".join(filter_parts) if filter_parts else ""
+
+            header_title = "🌐 Sales by Language"
+            if filter_text:
+                header_title = f"🌐 Sales by Language ({filter_text})"
             
             if len(filtered_df) == 0:
                 import plotly.graph_objects as go
@@ -1238,7 +1234,7 @@ class PublicDashboard:
                 if filter_text:
                     title_with_filters = f"Sales by Language - {filter_text} (No Data)"
                 fig.update_layout(template="plotly_dark", height=400, title=title_with_filters)
-                return fig
+                return header_title, fig
             
             # Sort by year to ensure proper ordering
             filtered_df = filtered_df.sort_values('Year Sold')
@@ -1278,7 +1274,7 @@ class PublicDashboard:
                 focus_language=focus_language,
                 include_language_label=(focus_language is None)
             )
-            return fig
+            return header_title, fig
         
         
         @self.app.callback(
@@ -1384,7 +1380,7 @@ class PublicDashboard:
             elif active_tab == "sales":
                 return self._create_sales_tab(filtered_royalties, selected_years, selected_language)
             elif active_tab == "books":
-                return self._create_books_tab(filtered_royalties)
+                return self._create_books_tab(filtered_royalties, filter_text)
             elif active_tab == "geography":
                 return self._create_geography_tab(filtered_royalties, filter_text)
             
@@ -1991,10 +1987,12 @@ class PublicDashboard:
             ])
         ], fluid=True)
     
-    def _create_books_tab(self, data=None):
+    def _create_books_tab(self, data=None, filter_text: str = ""):
         """Create books analysis tab content"""
         if data is None:
             data = self.royalties
+
+        context = f" ({filter_text})" if filter_text else ""
 
         def _auto_md_cols(n: int) -> int:
             if n <= 1:
@@ -2043,7 +2041,7 @@ class PublicDashboard:
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader(html.H4("📚 Total Sales by Book")),
+                        dbc.CardHeader(html.H4(f"📚 Total Sales by Book{context}")),
                         dbc.CardBody([
                             html.Div([
                                 dcc.Graph(
@@ -2058,7 +2056,7 @@ class PublicDashboard:
             # eBook vs Physical Books Analysis section
             dbc.Row([
                 dbc.Col([
-                    html.H4("📱 eBook vs 📖 Physical Books Analysis", className="mb-3 mt-2")
+                    html.H4(f"📱 eBook vs 📖 Physical Books Analysis{context}", className="mb-3 mt-2")
                 ])
             ]),
             dbc.Row(
@@ -2069,7 +2067,7 @@ class PublicDashboard:
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader(html.H5("📊 Format Statistics")),
+                        dbc.CardHeader(html.H5(f"📊 Format Statistics{context}")),
                         dbc.CardBody([
                             self._create_format_stats_table(data)
                         ])

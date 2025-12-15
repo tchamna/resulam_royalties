@@ -544,7 +544,7 @@ class ResulamDashboard:
         sales_by_language_section = dbc.Card([
             dbc.CardHeader(
                 dbc.Row([
-                    dbc.Col(html.H5("🌐 Sales by Language", className="mb-0"), md=8, xs=12),
+                    dbc.Col(html.H5("🌐 Sales by Language", id="sales-by-language-title", className="mb-0"), md=8, xs=12),
                     dbc.Col(
                         dcc.Dropdown(
                             id="sales-language-display-mode",
@@ -1214,38 +1214,28 @@ class ResulamDashboard:
             return trend_title, fig
         
         @self.app.callback(
+            Output("sales-by-language-title", "children"),
             Output("sales-by-language-chart", "figure"),
             Input("year-filter-store", "data"),
             Input("language-filter", "value"),
             Input("author-filter", "value"),
             Input("booktype-filter", "value"),
             Input("book-filter", "value"),
+            Input("category-filter", "value"),
             Input("sales-language-display-mode", "value"),
             Input("data-refresh-signal", "data"),
             prevent_initial_call=False
         )
-        def update_sales_by_language(selected_years, selected_language, selected_author, selected_booktype, selected_book, display_mode, refresh_signal):
+        def update_sales_by_language(selected_years, selected_language, selected_author, selected_booktype, selected_book, selected_category, display_mode, refresh_signal):
             """Update sales by language stacked chart by year"""
-            if not selected_years:
-                filtered_df = self.royalties
-            else:
-                filtered_df = self.royalties[self.royalties['Year Sold'].isin(selected_years)]
-            
-            # Apply language filter
-            if selected_language and selected_language != "all":
-                filtered_df = filtered_df[filtered_df['Language'] == selected_language]
-            
-            # Apply author filter
-            if selected_author and selected_author != "all":
-                filtered_df = filter_by_author(filtered_df, selected_author, 'Authors')
-            
-            # Apply book type filter
-            if selected_booktype and selected_booktype != "all":
-                filtered_df = filtered_df[filtered_df['BookType'] == selected_booktype]
-            
-            # Apply book filter
-            if selected_book and selected_book != "all":
-                filtered_df = filtered_df[filtered_df['book_nick_name'] == selected_book]
+            filtered_df, _ = _get_filtered_data(
+                selected_years,
+                selected_language,
+                selected_author,
+                selected_booktype,
+                selected_book,
+                selected_category,
+            )
             
             # Build filter text for title
             filter_parts = []
@@ -1261,7 +1251,13 @@ class ResulamDashboard:
                 filter_parts.append("📱 eBook" if selected_booktype == "Ebook" else "📖 Physical")
             if selected_book and selected_book != "all":
                 filter_parts.append(selected_book)
+            if selected_category and selected_category != "all":
+                filter_parts.append(f"📚 {selected_category}")
             filter_text = " | ".join(filter_parts) if filter_parts else ""
+
+            header_title = "🌐 Sales by Language"
+            if filter_text:
+                header_title = f"🌐 Sales by Language ({filter_text})"
             
             if len(filtered_df) == 0:
                 import plotly.graph_objects as go
@@ -1272,7 +1268,7 @@ class ResulamDashboard:
                 if filter_text:
                     title_with_filters = f"Sales by Language - {filter_text} (No Data)"
                 fig.update_layout(template="plotly_dark", height=400, title=title_with_filters)
-                return fig
+                return header_title, fig
             
             # Sort by year to ensure proper ordering
             filtered_df = filtered_df.sort_values('Year Sold')
@@ -1312,7 +1308,7 @@ class ResulamDashboard:
                 focus_language=focus_language,
                 include_language_label=(focus_language is None)
             )
-            return fig
+            return header_title, fig
         
         @self.app.callback(
             Output("returns-title", "children"),
@@ -1514,9 +1510,9 @@ class ResulamDashboard:
             if active_tab == "sales":
                 return self._create_sales_tab(filtered_royalties, selected_years, selected_language)
             elif active_tab == "books":
-                return self._create_books_tab(filtered_royalties)
+                return self._create_books_tab(filtered_royalties, filter_text)
             elif active_tab == "authors":
-                return self._create_authors_tab(filtered_exploded)
+                return self._create_authors_tab(filtered_exploded, filter_text)
             elif active_tab == "trends":
                 return self._create_earning_history_tab(filtered_exploded)
             elif active_tab == "geography":
@@ -2127,16 +2123,17 @@ class ResulamDashboard:
             ])
         ], fluid=True)
     
-    def _create_books_tab(self, data=None):
+    def _create_books_tab(self, data=None, filter_text: str = ""):
         """Create books analysis tab content"""
         if data is None:
             data = self.royalties
+        context = f" ({filter_text})" if filter_text else ""
         return dbc.Container([
             # Total Sales by Book section
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader(html.H4("📚 Total Sales by Book")),
+                        dbc.CardHeader(html.H4(f"📚 Total Sales by Book{context}")),
                         dbc.CardBody([
                             html.Div([
                                 dcc.Graph(
@@ -2151,7 +2148,7 @@ class ResulamDashboard:
             # eBook vs Physical Books Analysis section
             dbc.Row([
                 dbc.Col([
-                    html.H4("📱 eBook vs 📖 Physical Books Analysis", className="mb-3 mt-2")
+                    html.H4(f"📱 eBook vs 📖 Physical Books Analysis{context}", className="mb-3 mt-2")
                 ])
             ]),
             dbc.Row([
@@ -2190,7 +2187,7 @@ class ResulamDashboard:
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader(html.H5("📊 Format Statistics")),
+                        dbc.CardHeader(html.H5(f"📊 Format Statistics{context}")),
                         dbc.CardBody([
                             self._create_format_stats_table(data)
                         ])
@@ -2261,10 +2258,11 @@ class ResulamDashboard:
             ])
         ], bordered=True, hover=True, striped=True, size="sm")
     
-    def _create_authors_tab(self, data=None):
+    def _create_authors_tab(self, data=None, filter_text: str = ""):
         """Create authors analysis tab content"""
         if data is None:
             data = self.royalties_exploded
+        context = f" ({filter_text})" if filter_text else ""
         
         # Get the non-exploded data for metrics - match the filtered data's years and languages
         if data.shape[0] > 0:
@@ -2281,12 +2279,20 @@ class ResulamDashboard:
             metrics_data = self.royalties
             years_in_data = []
             languages_in_data = []
+
+        year_str = format_years_compact(years_in_data)
+        year_title = year_str
+        if filter_text:
+            parts = [p.strip() for p in filter_text.split("|") if p.strip()]
+            year_label = parts[0] if parts else year_str
+            extras = " | ".join(parts[1:])
+            year_title = year_label if not extras else f"{year_label} ({extras})"
         
         return dbc.Container([
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader(html.H4("💰 Royalties by Author (Top 20)")),
+                        dbc.CardHeader(html.H4(f"💰 Royalties by Author (Top 20){context}")),
                         dbc.CardBody([
                             dcc.Graph(
                                 figure=AuthorCharts.royalties_by_author(
@@ -2300,7 +2306,7 @@ class ResulamDashboard:
                 ], md=6),
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader(html.H4("📖 Books Sold by Author (Top 20)")),
+                        dbc.CardHeader(html.H4(f"📖 Books Sold by Author (Top 20){context}")),
                         dbc.CardBody([
                             dcc.Graph(
                                 figure=AuthorCharts.books_sold_by_author(
@@ -2316,7 +2322,7 @@ class ResulamDashboard:
             dbc.Row([
                 dbc.Col([
                     dbc.Card([
-                        dbc.CardHeader(html.H4("📊 Author Statistics")),
+                        dbc.CardHeader(html.H4(f"📊 Author Statistics{context}")),
                         dbc.CardBody([
                             dbc.Table([
                                 html.Thead(html.Tr([
@@ -2351,13 +2357,13 @@ class ResulamDashboard:
             ]),
             dbc.Row([
                 # Calculate author shares for display
-                (lambda author_data, year_str: (
+                (lambda author_data, year_title: (
                     dbc.Row([
                         dbc.Col([
                             dbc.Card([
                                 dbc.CardHeader(
                                     dbc.Row([
-                                        dbc.Col([html.H4(f"{year_str} 👨🏿‍👩🏿‍👧🏿 African Authors (By Earnings)")], md=9),
+                                        dbc.Col([html.H4(f"{year_title} 👨🏿‍👩🏿‍👧🏿 African Authors (By Earnings)")], md=9),
                                         dbc.Col([
                                             dbc.Button("📥 CSV", id="download-authors-earnings-csv", color="info", size="sm", className="me-2"),
                                             dbc.Button("📥 TXT", id="download-authors-earnings-txt", color="info", size="sm")
@@ -2378,7 +2384,7 @@ class ResulamDashboard:
                             dbc.Card([
                                 dbc.CardHeader(
                                     dbc.Row([
-                                        dbc.Col([html.H4(f"{year_str} 💰 Author Earnings Adjusted")], md=9),
+                                        dbc.Col([html.H4(f"{year_title} 💰 Author Earnings Adjusted")], md=9),
                                         dbc.Col([
                                             dbc.Button("📥 CSV", id="download-authors-adjustment-csv", color="warning", size="sm", className="me-2"),
                                             dbc.Button("📥 TXT", id="download-authors-adjustment-txt", color="warning", size="sm")
@@ -2402,9 +2408,9 @@ class ResulamDashboard:
                             ], className="shadow-sm mb-4")
                         ], md=6)
                     ])
-                ))({author: data[data['Authors_Exploded'].apply(lambda x: normalize_author_name(x)) == author]['Royalty per Author (USD)'].sum() * NET_REVENUE_PERCENTAGE 
+                ))({author: data[data['Authors_Exploded'].apply(lambda x: normalize_author_name(x)) == author]['Royalty per Author (USD)'].sum() * NET_REVENUE_PERCENTAGE
                     for author in get_unique_authors(data['Authors_Exploded']) if author.lower() != "resulam"},
-                   format_years_compact(years_in_data)),
+                   year_title),
                 dcc.Download(id="download-authors-earnings-csv"),
                 dcc.Download(id="download-authors-earnings-txt"),
                 dcc.Download(id="download-authors-adjustment-csv"),
