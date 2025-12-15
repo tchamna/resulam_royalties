@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Deployment environment'
+        description: Deployment environment
         required: true
-        default: 'production'
+        default: production
         type: choice
         options:
           - production
@@ -21,7 +21,7 @@ jobs:
     permissions:
       contents: read
       packages: read
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -45,7 +45,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Deploy to EC2 using Docker
         env:
@@ -54,78 +54,102 @@ jobs:
           APP_DIR: ${{ secrets.APP_DIR || '/home/ec2-user/apps/resulam-royalties' }}
           S3_BUCKET: ${{ secrets.S3_BUCKET || 'resulam-royalties' }}
           AWS_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
-          S3_DATA_FILES: ${{ secrets.S3_DATA_FILES }}
+          CONTAINER_NAME: ${{ secrets.CONTAINER_NAME || 'resulam-royalties' }}
+          HOST_PORT: ${{ secrets.HOST_PORT || '8050' }}
+          DASH_PORT: ${{ secrets.DASH_PORT || '8050' }}
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME || 'resulam-royalties.tchamna.com' }}
+          OLD_DOMAIN_NAME: ${{ secrets.OLD_DOMAIN_NAME || '' }}
+          CONFIGURE_NGINX: ${{ secrets.CONFIGURE_NGINX || 'false' }}
         run: |
-          echo "🚀 Deploying Docker container to EC2..."
-          
+          echo "Deploying Docker container to EC2..."
+
           ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST << 'ENDSSH'
-            set -e
-            
-            # Navigate to app directory
-            cd ${{ env.APP_DIR }}
-            
-            # Remove CSV files that are no longer tracked in git
+            set -euo pipefail
+
+            cd '${{ env.APP_DIR }}'
+
+            # Remove local CSV exports (generated artifacts)
             rm -f royalties_exploded_2024.csv royalties_per_author_2024.csv royalties_resulambooks_from_2015_2024_history_df.csv || true
-            
-            # Reset any merge conflicts and force clean state
+
             git fetch origin main
             git reset --hard origin/main
             git clean -fd || true
-            
+
             # Ensure AWS credentials are configured for S3 access
             mkdir -p ~/.aws
-            echo "[default]" > ~/.aws/credentials
-            echo "aws_access_key_id = ${{ secrets.AWS_ACCESS_KEY_ID }}" >> ~/.aws/credentials
-            echo "aws_secret_access_key = ${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> ~/.aws/credentials
-            echo "[default]" > ~/.aws/config
-            echo "region = ${{ env.AWS_REGION }}" >> ~/.aws/config
+            cat > ~/.aws/credentials <<CREDS
+            [default]
+            aws_access_key_id = ${{ secrets.AWS_ACCESS_KEY_ID }}
+            aws_secret_access_key = ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+CREDS
+            cat > ~/.aws/config <<CFG
+            [default]
+            region = ${{ env.AWS_REGION }}
+CFG
             chmod 600 ~/.aws/credentials
-            
-            # Verify AWS credentials
+
             aws sts get-caller-identity || echo "Warning: AWS credentials may not be configured correctly"
-            
-            # Stop and remove existing container
-            docker stop resulam-royalties 2>/dev/null || true
-            docker rm resulam-royalties 2>/dev/null || true
-            
-            # Build the Docker image (data files excluded via .dockerignore)
+
+            HOST_PORT='${{ env.HOST_PORT }}'
+            DASH_PORT='${{ env.DASH_PORT }}'
+            CONTAINER_NAME='${{ env.CONTAINER_NAME }}'
+
+            # Prevent accidental port conflicts (EC2 may host multiple apps)
+            if sudo netstat -tlnp 2>/dev/null | grep -q ":${HOST_PORT} .*LISTEN"; then
+              echo "ERROR: Port ${HOST_PORT} is already in use on this EC2 instance."
+              echo "Set the GitHub secret HOST_PORT to a free port (e.g. 8052, 8060, etc.) and re-run the workflow."
+              sudo netstat -tlnp 2>/dev/null | grep ":${HOST_PORT} .*LISTEN" || true
+              exit 1
+            fi
+
+            # Keep the previous image for rollback
+            if docker image inspect resulam-royalties:latest >/dev/null 2>&1; then
+              docker tag resulam-royalties:latest resulam-royalties:previous || true
+            fi
+
+            docker stop "${CONTAINER_NAME}" 2>/dev/null || true
+            docker rm "${CONTAINER_NAME}" 2>/dev/null || true
+
             docker build -t resulam-royalties:latest .
-            
-            # Run the container with AWS credentials mounted for automatic S3 sync
-            # SNS webhook provides instant updates, background sync is fallback
+
             docker run -d \
-              --name resulam-royalties \
+              --name "${CONTAINER_NAME}" \
               --restart unless-stopped \
-              -p 8050:8050 \
+              -p 127.0.0.1:${HOST_PORT}:${DASH_PORT} \
               -v ~/.aws:/root/.aws:ro \
               -e USE_S3_DATA=true \
-              -e S3_BUCKET=${{ env.S3_BUCKET }} \
-              -e AWS_DEFAULT_REGION=${{ env.AWS_REGION }} \
+              -e S3_BUCKET='${{ env.S3_BUCKET }}' \
+              -e AWS_DEFAULT_REGION='${{ env.AWS_REGION }}' \
               -e AUTO_SYNC_INTERVAL=60 \
               resulam-royalties:latest
-            
-            # Wait for container to start and check logs
-            echo "⏳ Waiting for container to start..."
+
+            echo "Waiting for container to start..."
             sleep 5
-            
-            # Check if container is running
-            if docker ps | grep -q resulam-royalties; then
-              echo "✅ Container is running!"
+
+            if docker ps | grep -q "${CONTAINER_NAME}"; then
+              echo "Container is running."
               echo ""
-              echo "📋 Container logs (last 50 lines):"
-              docker logs resulam-royalties --tail 50
-              echo ""
-              echo "🔍 Container status:"
-              docker ps -a | grep resulam-royalties
+              echo "Container logs (last 50 lines):"
+              docker logs "${CONTAINER_NAME}" --tail 50 || true
             else
-              echo "❌ Container failed to start!"
-              echo ""
-              echo "📋 Container logs:"
-              docker logs resulam-royalties || true
-              echo ""
-              echo "🔍 Container status:"
-              docker ps -a | grep resulam-royalties || true
+              echo "ERROR: Container failed to start."
+              docker logs "${CONTAINER_NAME}" || true
+              docker ps -a | grep "${CONTAINER_NAME}" || true
               exit 1
+            fi
+
+            # Optional: configure Nginx vhost for the domain -> localhost:${HOST_PORT}
+            if [ '${{ env.CONFIGURE_NGINX }}' = 'true' ]; then
+              echo ""
+              echo "Configuring Nginx reverse-proxy for ${{ env.DOMAIN_NAME }} -> 127.0.0.1:${HOST_PORT}"
+              chmod +x scripts/deploy/setup_nginx_vhost.sh || true
+              DOMAIN_NAME='${{ env.DOMAIN_NAME }}' \
+              OLD_DOMAIN_NAME='${{ env.OLD_DOMAIN_NAME }}' \
+              UPSTREAM_PORT="${HOST_PORT}" \
+              bash scripts/deploy/setup_nginx_vhost.sh
+            else
+              echo ""
+              echo "Nginx configuration skipped (set CONFIGURE_NGINX=true to enable)."
             fi
           ENDSSH
 
@@ -134,43 +158,52 @@ jobs:
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
-          APP_DIR: ${{ secrets.APP_DIR || '/home/ec2-user/apps/resulam-royalties' }}
+          CONTAINER_NAME: ${{ secrets.CONTAINER_NAME || 'resulam-royalties' }}
+          HOST_PORT: ${{ secrets.HOST_PORT || '8050' }}
         run: |
-          echo "📋 Checking application status and logs..."
-          ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST << 'EOF'
+          echo "Checking application status and logs..."
+          ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST << EOF
             echo "=== Docker Container Status ==="
-            docker ps -a | grep resulam-royalties || echo "Container not found"
-            
-            echo -e "\n=== Last 30 lines of container log ==="
-            docker logs resulam-royalties --tail 30 2>&1 || echo "No logs available"
-            
-            echo -e "\n=== Container health status ==="
-            docker inspect --format='{{.State.Health.Status}}' resulam-royalties 2>/dev/null || echo "Health check not available"
-            
-            echo -e "\n=== Checking if port 8050 is listening ==="
-            sudo netstat -tlnp | grep 8050 || echo "Port 8050 not listening"
-          EOF
+            docker ps -a | grep "${CONTAINER_NAME}" || echo "Container not found"
+
+            echo ""
+            echo "=== Last 30 lines of container log ==="
+            docker logs "${CONTAINER_NAME}" --tail 30 2>&1 || echo "No logs available"
+
+            echo ""
+            echo "=== Container health status ==="
+            docker inspect --format='{{.State.Health.Status}}' "${CONTAINER_NAME}" 2>/dev/null || echo "Health check not available"
+
+            echo ""
+            echo "=== Checking if port ${HOST_PORT} is listening ==="
+            sudo netstat -tlnp | grep ":${HOST_PORT} " || echo "Port ${HOST_PORT} not listening"
+EOF
 
       - name: Verify deployment
         env:
           DOMAIN_NAME: ${{ secrets.DOMAIN_NAME || 'resulam-royalties.tchamna.com' }}
           EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
+          HOST_PORT: ${{ secrets.HOST_PORT || '8050' }}
         run: |
-          echo "✅ Verifying application health..."
+          echo "Verifying application health..."
           max_attempts=10
           for i in $(seq 1 $max_attempts); do
-            # Try HTTPS first (production), then HTTP (fallback)
-            if curl -sf https://$DOMAIN_NAME/ > /dev/null 2>&1 || curl -sf http://$EC2_HOST:8050/ > /dev/null 2>&1; then
-              echo "✅ Application is responding!"
-              echo "Dashboard: https://$DOMAIN_NAME"
+            if curl -sf "https://$DOMAIN_NAME/" > /dev/null 2>&1; then
+              echo "OK: https://$DOMAIN_NAME"
               exit 0
             fi
+
+            if ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST "curl -sf http://127.0.0.1:$HOST_PORT/ >/dev/null 2>&1 && curl -sf http://127.0.0.1:$HOST_PORT/authors/ >/dev/null 2>&1"; then
+              echo "OK: container is responding on localhost:$HOST_PORT"
+              exit 0
+            fi
+
             echo "Attempt $i/$max_attempts: Waiting for application to start..."
             sleep 5
           done
-          
-          echo "❌ Application health check failed!"
-          echo "Check the 'Check application logs' step above for details"
+
+          echo "ERROR: Application health check failed."
           exit 1
 
       - name: Notify deployment
@@ -181,15 +214,15 @@ jobs:
             const status = '${{ job.status }}' === 'success' ? '✅ Success' : '❌ Failed';
             const deployment = `
             **Deployment Status:** ${status}
-            
+
             - **Commit:** ${{ github.sha }}
             - **Branch:** ${{ github.ref_name }}
             - **Author:** ${{ github.actor }}
             - **EC2:** ${{ secrets.EC2_HOST }}
+            - **Domain:** ${{ secrets.DOMAIN_NAME || 'resulam-royalties.tchamna.com' }}
             - **Time:** ${new Date().toUTCString()}
             `;
-            
-            // Log to workflow summary
+
             core.notice(deployment);
 
   rollback:
@@ -198,7 +231,7 @@ jobs:
     if: failure()
     permissions:
       contents: read
-    
+
     steps:
       - name: Create SSH key
         run: |
@@ -207,20 +240,35 @@ jobs:
           chmod 600 ~/.ssh/ec2-key.pem
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      - name: Rollback deployment
-        if: github.event_name == 'push'
+      - name: Rollback (docker)
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
+          CONTAINER_NAME: ${{ secrets.CONTAINER_NAME || 'resulam-royalties' }}
+          HOST_PORT: ${{ secrets.HOST_PORT || '8050' }}
+          DASH_PORT: ${{ secrets.DASH_PORT || '8050' }}
         run: |
-          echo "⏮️  Rolling back to previous version..."
-          ssh -i ~/.ssh/ec2-key.pem ec2-user@${{ secrets.EC2_HOST }} << 'EOF'
-          APP_DIR="/home/ec2-user/resulam-royalties"
-          cd "$APP_DIR"
-          git reset --hard HEAD~1
-          sudo systemctl restart resulam-royalties
-          sleep 3
-          if sudo systemctl is-active --quiet resulam-royalties; then
-            echo "✅ Rollback successful!"
-          else
-            echo "❌ Rollback failed!"
-            exit 1
-          fi
-          EOF
+          echo "Rollback: attempting to start resulam-royalties:previous"
+          ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST << 'EOF'
+            set -euo pipefail
+            if ! docker image inspect resulam-royalties:previous >/dev/null 2>&1; then
+              echo "No previous image found; rollback skipped."
+              exit 0
+            fi
+
+            CONTAINER_NAME='${{ secrets.CONTAINER_NAME || 'resulam-royalties' }}'
+            HOST_PORT='${{ secrets.HOST_PORT || '8050' }}'
+            DASH_PORT='${{ secrets.DASH_PORT || '8050' }}'
+
+            docker stop "${CONTAINER_NAME}" 2>/dev/null || true
+            docker rm "${CONTAINER_NAME}" 2>/dev/null || true
+
+            docker run -d \
+              --name "${CONTAINER_NAME}" \
+              --restart unless-stopped \
+              -p 127.0.0.1:${HOST_PORT}:${DASH_PORT} \
+              resulam-royalties:previous
+
+            echo "Rollback container started."
+            docker logs "${CONTAINER_NAME}" --tail 50 || true
+EOF
