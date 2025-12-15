@@ -13,15 +13,80 @@ CONFIGURE_NGINX="${CONFIGURE_NGINX:-false}"
 DOMAIN_NAME="${DOMAIN_NAME:-}"
 OLD_DOMAIN_NAME="${OLD_DOMAIN_NAME:-}"
 
-echo "Deploying container: ${CONTAINER_NAME}"
-echo "Host bind       : 127.0.0.1:${HOST_PORT} -> ${DASH_PORT}"
-echo "Domain          : ${DOMAIN_NAME:-<none>}"
+PORT_RANGE_START="${PORT_RANGE_START:-8050}"
+PORT_RANGE_END="${PORT_RANGE_END:-8099}"
+AUTO_PORT="${AUTO_PORT:-false}" # set true to auto-pick a free port if HOST_PORT is busy
 
-# Port conflict check (EC2 often hosts many apps)
-if sudo netstat -tlnp 2>/dev/null | grep -q ":${HOST_PORT} .*LISTEN"; then
-  echo "ERROR: Port ${HOST_PORT} is already in use on this EC2 instance."
-  sudo netstat -tlnp 2>/dev/null | grep ":${HOST_PORT} .*LISTEN" || true
-  exit 1
+STATE_DIR=".deploy_state"
+STATE_FILE="${STATE_DIR}/host_port"
+
+is_port_listening() {
+  local port="$1"
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltnH "( sport = :${port} )" 2>/dev/null | grep -q .
+    return $?
+  fi
+  sudo netstat -tlnp 2>/dev/null | grep -q ":${port} .*LISTEN"
+}
+
+pick_free_port() {
+  local start="$1"
+  local end="$2"
+  local port
+  for port in $(seq "$start" "$end"); do
+    if ! is_port_listening "$port"; then
+      echo "$port"
+      return 0
+    fi
+  done
+  return 1
+}
+
+mkdir -p "${STATE_DIR}" || true
+
+# Allow "HOST_PORT=auto" to enable auto port selection without extra flags.
+if [[ "${HOST_PORT}" == "auto" ]]; then
+  AUTO_PORT="true"
+fi
+
+echo "Deploying container: ${CONTAINER_NAME}"
+echo "Requested bind   : 127.0.0.1:${HOST_PORT} -> ${DASH_PORT}"
+echo "Domain           : ${DOMAIN_NAME:-<none>}"
+
+# Stop existing container first so redeploy to the same port works.
+docker stop "${CONTAINER_NAME}" 2>/dev/null || true
+docker rm "${CONTAINER_NAME}" 2>/dev/null || true
+
+# If we have a persisted port, prefer it in auto mode.
+if [[ "${AUTO_PORT}" == "true" ]]; then
+  if [[ -f "${STATE_FILE}" ]]; then
+    saved="$(cat "${STATE_FILE}" 2>/dev/null || true)"
+    if [[ -n "${saved}" && "${saved}" != "auto" && ! $(is_port_listening "${saved}") ]]; then
+      HOST_PORT="${saved}"
+    fi
+  fi
+fi
+
+# Port conflict handling
+if is_port_listening "${HOST_PORT}"; then
+  if [[ "${AUTO_PORT}" == "true" ]]; then
+    echo "Port ${HOST_PORT} is busy; selecting a free port in ${PORT_RANGE_START}-${PORT_RANGE_END}..."
+    HOST_PORT="$(pick_free_port "${PORT_RANGE_START}" "${PORT_RANGE_END}")" || {
+      echo "ERROR: No free port found in range ${PORT_RANGE_START}-${PORT_RANGE_END}."
+      exit 1
+    }
+  else
+    echo "ERROR: Port ${HOST_PORT} is already in use on this EC2 instance."
+    sudo netstat -tlnp 2>/dev/null | grep ":${HOST_PORT} .*LISTEN" || true
+    echo "Tip: set HOST_PORT=auto (or AUTO_PORT=true) to auto-pick a free port."
+    exit 1
+  fi
+fi
+
+echo "Using bind       : 127.0.0.1:${HOST_PORT} -> ${DASH_PORT}"
+
+if [[ "${AUTO_PORT}" == "true" ]]; then
+  echo "${HOST_PORT}" > "${STATE_FILE}" || true
 fi
 
 # Ensure AWS credentials exist for S3 sync (Dash container reads from /root/.aws mount)
@@ -45,9 +110,6 @@ fi
 if docker image inspect resulam-royalties:latest >/dev/null 2>&1; then
   docker tag resulam-royalties:latest resulam-royalties:previous || true
 fi
-
-docker stop "${CONTAINER_NAME}" 2>/dev/null || true
-docker rm "${CONTAINER_NAME}" 2>/dev/null || true
 
 docker build -t resulam-royalties:latest .
 

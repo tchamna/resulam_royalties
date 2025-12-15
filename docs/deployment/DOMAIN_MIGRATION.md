@@ -13,6 +13,8 @@ This workflow binds the container to a *local-only* host port (`127.0.0.1:<HOST_
 
 Pick a free port like `8052`, `8060`, etc.
 
+If you don’t want to choose manually, you can set `HOST_PORT=auto` and the deploy will pick the first free port in `8050-8099` and persist it across deploys.
+
 ## 3) Update GitHub Secrets
 
 In the GitHub repo: **Settings → Secrets and variables → Actions**
@@ -20,7 +22,7 @@ In the GitHub repo: **Settings → Secrets and variables → Actions**
 Set (or update) these secrets:
 
 - `DOMAIN_NAME`: e.g. `africanlanguagelibrary.tchamna.com`
-- `HOST_PORT`: e.g. `8052` (must be free on the EC2 host)
+- `HOST_PORT`: e.g. `8052` (must be free on the EC2 host) or `auto`
 - `CONTAINER_NAME`: e.g. `africanlanguagelibrary-dashboard` (avoid collisions)
 - `CONFIGURE_NGINX`: `true` (lets the workflow create an Nginx vhost for `DOMAIN_NAME`)
 
@@ -45,4 +47,3 @@ The workflow configures Nginx for HTTP. To enable HTTPS:
    - `sudo certbot renew --dry-run`
 
 If you already have certbot installed and working on this server, step (2) is not needed.
-
