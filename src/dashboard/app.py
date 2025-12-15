@@ -421,7 +421,7 @@ class ResulamDashboard:
             ),
             dcc.Interval(
                 id="device-warning-timer",
-                interval=8 * 1000,
+                interval=5 * 1000,
                 n_intervals=0,
                 max_intervals=1,
             ),
