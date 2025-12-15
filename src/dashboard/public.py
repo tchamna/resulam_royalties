@@ -371,7 +371,7 @@ class PublicDashboard:
                                 size="sm",
                             ),
                         ],
-                        className="d-flex flex-wrap justify-content-center gap-2 mb-2",
+                        className="header-social-links d-flex flex-wrap justify-content-center gap-2 mb-2",
                     ),
                     width=12,
                 )

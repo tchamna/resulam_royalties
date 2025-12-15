@@ -38,5 +38,75 @@
     },
     true
   );
-})();
 
+  // Animate KPI metric values when they update (adds a subtle "live" feel).
+  function animateMetric(node) {
+    if (!node) return;
+
+    node.classList.remove("metric-pop");
+    // Force reflow so the animation restarts
+    void node.offsetWidth;
+    node.classList.add("metric-pop");
+
+    var card = node.closest ? node.closest(".card") : null;
+    if (card) {
+      card.classList.remove("card-pop");
+      void card.offsetWidth;
+      card.classList.add("card-pop");
+    }
+  }
+
+  function attachMetricObserver(node) {
+    if (!node || !node.dataset) return;
+    if (node.dataset.metricObserved === "1") return;
+    node.dataset.metricObserved = "1";
+
+    var lastText = (node.textContent || "").trim();
+    try {
+      var observer = new MutationObserver(function () {
+        var nextText = (node.textContent || "").trim();
+        if (nextText && nextText !== lastText) {
+          lastText = nextText;
+          animateMetric(node);
+        }
+      });
+      observer.observe(node, { childList: true, characterData: true, subtree: true });
+    } catch (e) {
+      // Ignore if MutationObserver not available
+    }
+  }
+
+  function scanAndAttachMetricObservers(root) {
+    var scope = root || document;
+    var nodes = scope.querySelectorAll ? scope.querySelectorAll('[id^="metric-"]') : [];
+    for (var i = 0; i < nodes.length; i++) {
+      attachMetricObserver(nodes[i]);
+    }
+  }
+
+  function initMetricAnimations() {
+    scanAndAttachMetricObservers(document);
+
+    // Re-scan when Dash swaps out tab content.
+    try {
+      var scheduled = false;
+      var rootObserver = new MutationObserver(function () {
+        if (scheduled) return;
+        scheduled = true;
+        window.requestAnimationFrame(function () {
+          scheduled = false;
+          scanAndAttachMetricObservers(document);
+        });
+      });
+      rootObserver.observe(document.body, { childList: true, subtree: true });
+    } catch (e) {
+      // Ignore if MutationObserver not available
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initMetricAnimations);
+  } else {
+    initMetricAnimations();
+  }
+})();
