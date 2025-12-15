@@ -786,12 +786,17 @@ class PublicDashboard:
             """
             function(year, language, author, bookType, book, category) {
                 try {
-                    if (!window.matchMedia('(max-width: 768px)').matches) {
-                        return window.dash_clientside.no_update;
-                    }
                     var el = document.getElementById('tab-view-anchor');
                     if (el) {
-                        el.scrollIntoView({behavior: 'smooth', block: 'start'});
+                        var rect = el.getBoundingClientRect();
+                        var anchorTop = rect.top + (window.pageYOffset || document.documentElement.scrollTop || 0);
+                        var y = window.pageYOffset || document.documentElement.scrollTop || 0;
+                        // Only scroll down when the user is above the content area.
+                        if (y + 10 < anchorTop) {
+                            el.scrollIntoView({behavior: 'smooth', block: 'start'});
+                        } else {
+                            return window.dash_clientside.no_update;
+                        }
                     }
                 } catch (e) {}
                 return Date.now();
