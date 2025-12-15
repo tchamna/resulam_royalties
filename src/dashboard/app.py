@@ -173,7 +173,7 @@ class ResulamDashboard:
             <head>
                 {%metas%}
                 <title>{%title%}</title>
-                {%favicon%}
+                <link rel="icon" type="image/png" href="assets/resulam_logo_egg.png" />
                 {%css%}
                 <meta property="og:title" content="African Languages Books - Resulam" />
                 <meta name="twitter:title" content="African Languages Books - Resulam" />
