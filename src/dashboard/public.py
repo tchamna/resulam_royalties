@@ -552,9 +552,11 @@ class PublicDashboard:
             ])
         ], className="shadow-sm mb-4")
 
-        # Group sales overview elements so they can be toggled per tab
+        # KPI cards (shown on Purchase + Sales tabs)
+        kpi_section = html.Div(metrics_row, id="kpi-section")
+
+        # Sales overview charts (shown only on Sales tab)
         sales_overview_section = html.Div([
-            metrics_row,
             sales_trend_section,
             sales_by_language_section
         ], id="sales-overview-section")
@@ -575,6 +577,7 @@ class PublicDashboard:
             header,
             filter_section,
             tabs,
+            kpi_section,
             sales_overview_section,
             content,
             
@@ -981,14 +984,17 @@ class PublicDashboard:
         # Callback to update the year-filter-store when a year is selected
         @self.app.callback(
             Output("sales-overview-section", "style"),
+            Output("kpi-section", "style"),
             Input("dashboard-tabs", "active_tab"),
             prevent_initial_call=False
         )
         def toggle_sales_overview(active_tab):
-            """Show sales overview cards/charts only on the Sales tab."""
+            """Show KPI cards on Purchase+Sales, charts only on Sales."""
             if active_tab == "sales":
-                return {}
-            return {"display": "none"}
+                return {}, {}
+            if active_tab == "purchase":
+                return {"display": "none"}, {}
+            return {"display": "none"}, {"display": "none"}
 
         @self.app.callback(
             Output("year-filter-store", "data"),
