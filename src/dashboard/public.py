@@ -326,6 +326,56 @@ class PublicDashboard:
                     )
                 ], width=2, className="text-end")
             ]),
+            dbc.Row([
+                dbc.Col(
+                    html.Div(
+                        [
+                            dbc.Button(
+                                [html.I(className="fas fa-globe me-2"), "www.resulam.com"],
+                                href="https://www.resulam.com",
+                                target="_blank",
+                                rel="noopener noreferrer",
+                                color="light",
+                                size="sm",
+                            ),
+                            dbc.Button(
+                                [html.I(className="fab fa-youtube me-2"), "YouTube Resulam"],
+                                href="https://www.youtube.com/@Resulam",
+                                target="_blank",
+                                rel="noopener noreferrer",
+                                color="danger",
+                                size="sm",
+                            ),
+                            dbc.Button(
+                                [html.I(className="fab fa-youtube me-2"), "YouTube Nufi"],
+                                href="https://www.youtube.com/@nufifeefeelanguage-resulam722",
+                                target="_blank",
+                                rel="noopener noreferrer",
+                                color="danger",
+                                size="sm",
+                            ),
+                            dbc.Button(
+                                [html.I(className="fab fa-facebook me-2"), "Facebook"],
+                                href="https://www.facebook.com/resulam",
+                                target="_blank",
+                                rel="noopener noreferrer",
+                                color="primary",
+                                size="sm",
+                            ),
+                            dbc.Button(
+                                [html.I(className="fab fa-linkedin me-2"), "LinkedIn"],
+                                href="https://www.linkedin.com/company/67290371/admin/dashboard/",
+                                target="_blank",
+                                rel="noopener noreferrer",
+                                color="info",
+                                size="sm",
+                            ),
+                        ],
+                        className="d-flex flex-wrap justify-content-center gap-2 mb-2",
+                    ),
+                    width=12,
+                )
+            ]),
             dbc.Alert(
                 "💻 For the best experience, please use a laptop or desktop computer.",
                 id="device-warning-banner",
