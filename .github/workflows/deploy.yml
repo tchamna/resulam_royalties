@@ -118,6 +118,7 @@ CFG
               -p 127.0.0.1:${HOST_PORT}:${DASH_PORT} \
               -v ~/.aws:/root/.aws:ro \
               -e USE_S3_DATA=true \
+              -e PUBLIC_BASE_URL='https://${{ env.DOMAIN_NAME }}' \
               -e S3_BUCKET='${{ env.S3_BUCKET }}' \
               -e AWS_DEFAULT_REGION='${{ env.AWS_REGION }}' \
               -e AUTO_SYNC_INTERVAL=60 \
@@ -267,6 +268,7 @@ EOF
               --name "${CONTAINER_NAME}" \
               --restart unless-stopped \
               -p 127.0.0.1:${HOST_PORT}:${DASH_PORT} \
+              -e PUBLIC_BASE_URL='https://${{ secrets.DOMAIN_NAME || 'resulam-royalties.tchamna.com' }}' \
               resulam-royalties:previous
 
             echo "Rollback container started."

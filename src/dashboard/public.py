@@ -166,6 +166,17 @@ class PublicDashboard:
         except Exception as e:
             print(f"⚠️  Warning: Could not register webhooks: {e}")
         
+        # Link-preview metadata (WhatsApp, etc.) works best with absolute URLs.
+        canonical_base_url = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
+        if not canonical_base_url:
+            canonical_base_url = "https://africanlanguagelibrary.tchamna.com"
+
+        assets_prefix = f"{prefix.rstrip('/')}/assets"
+        favicon_png_path = f"{assets_prefix}/resulam_logo_egg.png"
+        favicon_ico_path = f"{assets_prefix}/favicon.ico"
+        og_image_url = f"{canonical_base_url}{favicon_png_path}"
+        og_url = f"{canonical_base_url}{prefix}"
+
         # Add custom CSS for theme switching
         self.app.index_string = '''
         <!DOCTYPE html>
@@ -173,18 +184,21 @@ class PublicDashboard:
             <head>
                 {%metas%}
                 <title>{%title%}</title>
-                <link rel="icon" type="image/png" href="assets/resulam_logo_egg.png" />
-                <link rel="apple-touch-icon" href="assets/resulam_logo_egg.png" />
+                <link rel="icon" href="__FAVICON_ICO__" />
+                <link rel="icon" type="image/png" href="__FAVICON_PNG__" />
+                <link rel="apple-touch-icon" href="__FAVICON_PNG__" />
                 {%css%}
                 <meta property="og:title" content="African Languages Books - Resulam" />
                 <meta property="og:site_name" content="Resulam" />
                 <meta property="og:type" content="website" />
-                <meta property="og:description" content="African Languages Libraries by Resulam: explore books, sales trends, and geographic distribution." />
-                <meta property="og:image" content="assets/resulam_logo_egg.png" />
+                <meta property="og:description" content="African Languages Library by Resulam: explore books, sales trends, and geographic distribution." />
+                <meta property="og:url" content="__OG_URL__" />
+                <meta property="og:image" content="__OG_IMAGE__" />
+                <meta property="og:image:secure_url" content="__OG_IMAGE__" />
                 <meta property="og:image:alt" content="Resulam" />
                 <meta name="twitter:title" content="African Languages Books - Resulam" />
                 <meta name="twitter:card" content="summary" />
-                <meta name="twitter:image" content="assets/resulam_logo_egg.png" />
+                <meta name="twitter:image" content="__OG_IMAGE__" />
                 <style>
                     body.light-mode {
                         background-color: #f8f9fa !important;
@@ -283,6 +297,14 @@ class PublicDashboard:
             </body>
         </html>
         '''
+
+        self.app.index_string = (
+            self.app.index_string
+            .replace("__FAVICON_ICO__", favicon_ico_path)
+            .replace("__FAVICON_PNG__", favicon_png_path)
+            .replace("__OG_IMAGE__", og_image_url)
+            .replace("__OG_URL__", og_url)
+        )
         
         # Set page title for public site (fallback, multi-page router overrides per path)
         self.app.title = "African Languages Books - Resulam"
