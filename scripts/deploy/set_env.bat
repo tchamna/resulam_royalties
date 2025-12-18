@@ -15,7 +15,8 @@ set "GIT_REPO=https://github.com/tchamna/resulam_royalties.git"
 REM Application Configuration
 set "APP_PORT=8050"
 set "APP_DIR=/home/ec2-user/apps/resulam-royalties"
-set "DOMAIN_NAME=resulam-royalties.tchamna.com"
+set "DOMAIN_NAME=africanlanguagelibrary.tchamna.com"
+set "OLD_DOMAIN_NAME=resulam-royalties.tchamna.com"
 
 REM AWS Configuration
 set "AWS_REGION=us-east-1"

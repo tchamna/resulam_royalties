@@ -70,7 +70,7 @@ aws sns set-topic-attributes \
 aws sns subscribe \
   --topic-arn $TOPIC_ARN \
   --protocol https \
-  --notification-endpoint https://resulam-royalties.tchamna.com/api/s3-webhook \
+  --notification-endpoint https://africanlanguagelibrary.tchamna.com/api/s3-webhook \
   --region us-east-1
 ```
 
@@ -103,7 +103,7 @@ aws s3api put-bucket-notification-configuration \
 
 ```bash
 # Check if webhook is active
-curl https://resulam-royalties.tchamna.com/api/webhook-status
+curl https://africanlanguagelibrary.tchamna.com/api/webhook-status
 
 # Expected response:
 # {
@@ -158,7 +158,7 @@ aws s3api get-bucket-notification-configuration \
 
 3. **Verify HTTPS access**:
    ```bash
-   curl https://resulam-royalties.tchamna.com/api/s3-webhook
+   curl https://africanlanguagelibrary.tchamna.com/api/s3-webhook
    ```
    Should return: `{"status": "ok"}`
 

@@ -49,8 +49,8 @@ jobs:
           CONTAINER_NAME: ${{ secrets.CONTAINER_NAME || 'resulam-royalties' }}
           HOST_PORT: ${{ secrets.HOST_PORT || '8050' }}
           DASH_PORT: ${{ secrets.DASH_PORT || '8050' }}
-          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME || 'resulam-royalties.tchamna.com' }}
-          OLD_DOMAIN_NAME: ${{ secrets.OLD_DOMAIN_NAME || '' }}
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME || 'africanlanguagelibrary.tchamna.com' }}
+          OLD_DOMAIN_NAME: ${{ secrets.OLD_DOMAIN_NAME || 'resulam-royalties.tchamna.com' }}
           CONFIGURE_NGINX: ${{ secrets.CONFIGURE_NGINX || 'true' }}
           ZERO_DOWNTIME: ${{ secrets.ZERO_DOWNTIME || 'true' }}
         run: |
@@ -62,7 +62,7 @@ jobs:
             rm -f royalties_exploded_2024.csv royalties_per_author_2024.csv royalties_resulambooks_from_2015_2024_history_df.csv || true; \
             git fetch origin main; \
             git reset --hard origin/main; \
-            git clean -fd || true; \
+            git clean -fd -e .deploy_state || true; \
             chmod +x scripts/deploy/deploy_docker_remote.sh scripts/deploy/setup_nginx_vhost.sh || true; \
             AWS_ACCESS_KEY_ID='${{ secrets.AWS_ACCESS_KEY_ID }}' \
             AWS_SECRET_ACCESS_KEY='${{ secrets.AWS_SECRET_ACCESS_KEY }}' \
@@ -105,7 +105,7 @@ jobs:
 
       - name: Verify deployment
         env:
-          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME || 'resulam-royalties.tchamna.com' }}
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME || 'africanlanguagelibrary.tchamna.com' }}
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
           HOST_PORT: ${{ secrets.HOST_PORT || '8050' }}
@@ -151,7 +151,7 @@ jobs:
           CONTAINER_NAME: ${{ secrets.CONTAINER_NAME || 'resulam-royalties' }}
           HOST_PORT: ${{ secrets.HOST_PORT || '8050' }}
           DASH_PORT: ${{ secrets.DASH_PORT || '8050' }}
-          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME || 'resulam-royalties.tchamna.com' }}
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME || 'africanlanguagelibrary.tchamna.com' }}
         run: |
           set -euo pipefail
           echo "Rollback: starting resulam-royalties:previous if available"
