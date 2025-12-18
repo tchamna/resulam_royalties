@@ -218,8 +218,40 @@ class BookMetadataMapper:
         if title_normalized in self._nickname_lookup:
             return self._nickname_lookup[title_normalized]
 
-        # Fallback: return simplified title (not the old CSV nicknames)
-        return title_stripped
+        # Fallback: generate a stable, convention-friendly nickname (snake_case),
+        # with a best-effort language prefix when it can be inferred from the title.
+        return self._fallback_slug_nickname(title_stripped, title_normalized)
+
+    def _fallback_slug_nickname(self, title_stripped: str, title_normalized: str) -> str:
+        import re
+
+        def slugify(text: str) -> str:
+            slug = re.sub(r"[^a-z0-9]+", "_", text.lower())
+            return slug.strip("_")
+
+        # Try to infer language from patterns like "en langue ewondo"
+        lang = None
+        m = re.search(r"\ben langue\s+([a-z0-9' -]+)", title_normalized)
+        if m:
+            lang_raw = m.group(1).strip()
+            # keep only the first token (handles "fe'efe'e ..." etc)
+            lang = lang_raw.split()[0].strip()
+            lang = re.sub(r"[^a-z0-9]+", "", lang)
+
+        # Conversation de base pattern: normalize to "<lang>_conversation_de_base"
+        if lang and "conversation" in title_normalized and "de base" in title_normalized:
+            return f"{lang}_conversation_de_base"
+
+        # Remove the "en langue <lang>" phrase so the slug doesn't repeat the language twice.
+        slug_source = title_normalized
+        if m:
+            slug_source = re.sub(r"\ben langue\s+[a-z0-9' -]+", "", slug_source).strip()
+
+        slug = slugify(slug_source)
+        if lang and slug and not slug.startswith(f"{lang}_"):
+            slug = f"{lang}_{slug}"
+
+        return slug or title_stripped
     
     def get_authors(self, title: str) -> str:
         """Get authors from title with special rules"""

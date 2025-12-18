@@ -27,6 +27,7 @@ HARDCODED_TITLE_NICKNAMES = {
     "Contes bamilekés racontés en ngemba et traduits en français: A lə lǎ' mbɔ́ mɔ̀' lěʼ": "ngemba_contes_bamilekés",
     "Contes bamilekés racontés en yemba et traduits en francais": "yemba_contes_bamilekés",
     "Conversation de base en langue ewondo": "ewondo_conversation_de_base",
+    "Conversations de base en langue ewondo": "ewondo_conversation_de_base",
     "Conversation de base en langue fe'efe'e: Basic Conversation in Fe'efe'e Language": "nufi_conversation_de_base",
     "Conversations de base en langue fe'efe'e: Basic Conversation in Fe'efe'e Language": "nufi_conversation_de_base",
     "Conversations de base en langue basaa": "basaa_conversations_de_base",
@@ -164,5 +165,5 @@ DB_NICKNAME_TO_ROYALTY = {
     "mon_prénom_africain_mon_prénom_bamiléké": ["prénom_africain_bamiléké"],
     
     # Conversation de base (ewondo special case)
-    "ewondo_conversation_de_base": ["Conversations de base en langue ewondo"],
+    "ewondo_conversation_de_base": ["ewondo_conversation_de_base"],
 }
