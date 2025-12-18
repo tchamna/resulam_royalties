@@ -454,7 +454,7 @@ class ResulamDashboard:
             all_categories = []
         
         filter_section = dbc.Container([
-            # First row: Year, Language, Author
+            # Filter order: Year, Languages, Category, Books, Authors, Type
             dbc.Row([
                 dbc.Col([
                     dbc.Label("Year:", className="fw-bold text-light mb-1", style={"fontSize": "0.85rem"}),
@@ -485,6 +485,36 @@ class ResulamDashboard:
                     )
                 ], md=2, sm=4, xs=6),
                 dbc.Col([
+                    dbc.Label(id="category-label", className="fw-bold text-light mb-1", style={"fontSize": "0.85rem"}),
+                    dcc.Dropdown(
+                        id="category-filter",
+                        options=[{"label": f"All Categories ({len(all_categories)})", "value": "all"}] + [
+                            {"label": cat, "value": cat} for cat in all_categories
+                        ],
+                        value="all",
+                        multi=False,
+                        searchable=True,
+                        clearable=False,
+                        style={"width": "100%"},
+                        placeholder="Select..."
+                    )
+                ], md=2, sm=4, xs=6),
+                dbc.Col([
+                    dbc.Label(id="book-label", className="fw-bold text-light mb-1", style={"fontSize": "0.85rem"}),
+                    dcc.Dropdown(
+                        id="book-filter",
+                        options=[{"label": f"All Books ({len(all_book_nicknames)})", "value": "all"}] + [
+                            {"label": nickname, "value": nickname} for nickname in all_book_nicknames
+                        ],
+                        value="all",
+                        multi=False,
+                        searchable=True,
+                        clearable=False,
+                        style={"width": "100%"},
+                        placeholder="Search..."
+                    )
+                ], md=2, sm=4, xs=6),
+                dbc.Col([
                     dbc.Label(id="author-label", className="fw-bold text-light mb-1", style={"fontSize": "0.85rem"}),
                     dcc.Dropdown(
                         id="author-filter",
@@ -510,36 +540,6 @@ class ResulamDashboard:
                         searchable=True,
                         clearable=False,
                         style={"width": "100%"}
-                    )
-                ], md=2, sm=4, xs=6),
-                dbc.Col([
-                    dbc.Label(id="book-label", className="fw-bold text-light mb-1", style={"fontSize": "0.85rem"}),
-                    dcc.Dropdown(
-                        id="book-filter",
-                        options=[{"label": f"All Books ({len(all_book_nicknames)})", "value": "all"}] + [
-                            {"label": nickname, "value": nickname} for nickname in all_book_nicknames
-                        ],
-                        value="all",
-                        multi=False,
-                        searchable=True,
-                        clearable=False,
-                        style={"width": "100%"},
-                        placeholder="Search..."
-                    )
-                ], md=2, sm=4, xs=6),
-                dbc.Col([
-                    dbc.Label(id="category-label", className="fw-bold text-light mb-1", style={"fontSize": "0.85rem"}),
-                    dcc.Dropdown(
-                        id="category-filter",
-                        options=[{"label": f"All Categories ({len(all_categories)})", "value": "all"}] + [
-                            {"label": cat, "value": cat} for cat in all_categories
-                        ],
-                        value="all",
-                        multi=False,
-                        searchable=True,
-                        clearable=False,
-                        style={"width": "100%"},
-                        placeholder="Select..."
                     )
                 ], md=2, sm=4, xs=6),
             ], className="g-2 align-items-end mb-2"),
@@ -1213,7 +1213,7 @@ class ResulamDashboard:
         )
         def reset_all_filters(n_clicks):
             """Reset all filters to their default values"""
-            return "lifetime", "all", "all", "all", "all", "all"
+            return CURRENT_YEAR, "all", "all", "all", "all", "all"
 
         @self.app.callback(
             Output("year-filter", "options"),
