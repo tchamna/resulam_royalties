@@ -37,7 +37,14 @@ def _get_data_paths():
         # On EC2, always use the downloaded S3 paths (they should exist after deployment)
         return EC2_BOOKS_DATABASE_PATH, EC2_ROYALTIES_HISTORY_PATH
     else:
-        # Local development - use Google Drive paths
+        # Local development - prefer Google Drive paths, but gracefully fall back
+        # to the local `data/` folder when Drive isn't available.
+        if LOCAL_BOOKS_DATABASE_PATH.exists() and LOCAL_ROYALTIES_HISTORY_PATH.exists():
+            return LOCAL_BOOKS_DATABASE_PATH, LOCAL_ROYALTIES_HISTORY_PATH
+        if EC2_BOOKS_DATABASE_PATH.exists() and EC2_ROYALTIES_HISTORY_PATH.exists():
+            return EC2_BOOKS_DATABASE_PATH, EC2_ROYALTIES_HISTORY_PATH
+        # Default to the Drive paths so the "Missing required files" message
+        # points at the intended local dev location.
         return LOCAL_BOOKS_DATABASE_PATH, LOCAL_ROYALTIES_HISTORY_PATH
 
 BOOKS_DATABASE_PATH, ROYALTIES_HISTORY_PATH = _get_data_paths()

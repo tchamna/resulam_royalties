@@ -147,12 +147,17 @@ class BookMetadataMapper:
             self.books_df['language_name'].tolist()
         ))
 
-        # Precompute normalized lookups for resilient matching (language)
+        # Precompute normalized lookups for resilient matching (language, authors)
         self._language_lookup = {}
+        self._author_lookup = {}
         for title, language in self.language_mapping.items():
             if isinstance(title, str) and isinstance(language, str):
                 normalized_key = self._normalize_for_matching(title)
                 self._language_lookup[normalized_key] = language
+        for title, authors in self.author_mapping.items():
+            if isinstance(title, str) and isinstance(authors, str):
+                normalized_key = self._normalize_for_matching(title)
+                self._author_lookup[normalized_key] = authors
         
         # Precompute normalized nickname lookup for fuzzy matching
         self._nickname_lookup = {}
@@ -186,6 +191,13 @@ class BookMetadataMapper:
         text = text.lower()
         # Collapse multiple spaces into single space
         text = re.sub(r'\s+', ' ', text)
+        # Strip trailing date suffixes sometimes appended in the books database
+        # (e.g. " – October 11, 2023") so lookups match royalties titles.
+        text = re.sub(
+            r"\s*[-\u2013\u2014]\s*(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+\d{4}\s*$",
+            "",
+            text,
+        )
         # Strip trailing punctuation (period, comma, etc.) that might cause mismatches
         text = text.strip().rstrip('.,;:!')
         return text
@@ -224,7 +236,18 @@ class BookMetadataMapper:
         elif "nùfī" in title.lower() or "nufi" in title.lower() or "fe'efe'e" in title.lower():
             return "Resulam, Shck Tchamna"
         else:
-            return self.author_mapping.get(title, "Resulam, Shck Tchamna")
+            if not isinstance(title, str):
+                return "Resulam, Shck Tchamna"
+
+            title_stripped = title.strip()
+            if title_stripped in self.author_mapping:
+                return self.author_mapping[title_stripped]
+
+            title_normalized = self._normalize_for_matching(title_stripped)
+            if title_normalized in self._author_lookup:
+                return self._author_lookup[title_normalized]
+
+            return "Resulam, Shck Tchamna"
 
     def get_language(self, title: str) -> str:
         """Resolve language for a given title with graceful fallbacks"""

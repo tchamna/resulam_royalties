@@ -1213,7 +1213,7 @@ class ResulamDashboard:
         )
         def reset_all_filters(n_clicks):
             """Reset all filters to their default values"""
-            return CURRENT_YEAR, "all", "all", "all", "all", "all"
+            return "lifetime", "all", "all", "all", "all", "all"
 
         @self.app.callback(
             Output("year-filter", "options"),
