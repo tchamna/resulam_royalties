@@ -51,7 +51,8 @@ jobs:
           DASH_PORT: ${{ secrets.DASH_PORT || '8050' }}
           DOMAIN_NAME: ${{ secrets.DOMAIN_NAME || 'resulam-royalties.tchamna.com' }}
           OLD_DOMAIN_NAME: ${{ secrets.OLD_DOMAIN_NAME || '' }}
-          CONFIGURE_NGINX: ${{ secrets.CONFIGURE_NGINX || 'false' }}
+          CONFIGURE_NGINX: ${{ secrets.CONFIGURE_NGINX || 'true' }}
+          ZERO_DOWNTIME: ${{ secrets.ZERO_DOWNTIME || 'true' }}
         run: |
           set -euo pipefail
           echo "Deploying to EC2..."
@@ -73,6 +74,7 @@ jobs:
             DOMAIN_NAME='$DOMAIN_NAME' \
             OLD_DOMAIN_NAME='$OLD_DOMAIN_NAME' \
             CONFIGURE_NGINX='$CONFIGURE_NGINX' \
+            ZERO_DOWNTIME='$ZERO_DOWNTIME' \
             PUBLIC_BASE_URL='https://$DOMAIN_NAME' \
             bash scripts/deploy/deploy_docker_remote.sh"
 
@@ -83,10 +85,12 @@ jobs:
           EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
           CONTAINER_NAME: ${{ secrets.CONTAINER_NAME || 'resulam-royalties' }}
           HOST_PORT: ${{ secrets.HOST_PORT || '8050' }}
+          APP_DIR: ${{ secrets.APP_DIR || '/home/ec2-user/apps/resulam-royalties' }}
         run: |
           set -euo pipefail
           echo "Checking container status and logs..."
           ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no "$EC2_USER@$EC2_HOST" "\
+            UPSTREAM_PORT=\$(cat '$APP_DIR/.deploy_state/host_port' 2>/dev/null || echo '$HOST_PORT'); \
             echo '=== Docker Container Status ==='; \
             docker ps -a | grep -F '$CONTAINER_NAME' || echo 'Container not found'; \
             echo ''; \
@@ -96,8 +100,8 @@ jobs:
             echo '=== Container health status ==='; \
             docker inspect --format='{{.State.Health.Status}}' '$CONTAINER_NAME' 2>/dev/null || echo 'Health check not available'; \
             echo ''; \
-            echo '=== Checking if port $HOST_PORT is listening ==='; \
-            sudo netstat -tlnp | grep ':$HOST_PORT ' || echo 'Port $HOST_PORT not listening'"
+            echo '=== Checking if port '\$UPSTREAM_PORT' is listening ==='; \
+            sudo netstat -tlnp | grep ':\'\$UPSTREAM_PORT' ' || echo 'Port '\$UPSTREAM_PORT' not listening'"
 
       - name: Verify deployment
         env:
@@ -105,6 +109,7 @@ jobs:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
           HOST_PORT: ${{ secrets.HOST_PORT || '8050' }}
+          APP_DIR: ${{ secrets.APP_DIR || '/home/ec2-user/apps/resulam-royalties' }}
         run: |
           set -euo pipefail
           echo "Verifying application health..."
@@ -114,8 +119,8 @@ jobs:
               echo "OK: https://$DOMAIN_NAME"
               exit 0
             fi
-            if ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no "$EC2_USER@$EC2_HOST" "curl -sf http://127.0.0.1:$HOST_PORT/ >/dev/null 2>&1 && curl -sf http://127.0.0.1:$HOST_PORT/authors/ >/dev/null 2>&1"; then
-              echo "OK: container is responding on localhost:$HOST_PORT"
+            if ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no "$EC2_USER@$EC2_HOST" "UP=\$(cat '$APP_DIR/.deploy_state/host_port' 2>/dev/null || echo '$HOST_PORT'); curl -sf http://127.0.0.1:\$UP/ >/dev/null 2>&1 && curl -sf http://127.0.0.1:\$UP/authors/ >/dev/null 2>&1"; then
+              echo "OK: container is responding on localhost (upstream port from state file)"
               exit 0
             fi
             echo "Attempt $i/$max_attempts: waiting..."

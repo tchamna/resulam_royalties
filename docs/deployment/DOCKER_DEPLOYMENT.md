@@ -127,6 +127,25 @@ docker-compose down --rmi all
 
 ## Troubleshooting
 
+### Avoiding `502 Bad Gateway` during deploys
+
+If you deploy by stopping the running container and starting a new one on the same port (e.g. `8050`), nginx will return `502` until the new container finishes booting (S3 sync + Excel processing can take minutes).
+
+**Recommended (zero-downtime) approach**
+
+- Deploy the new container on a *new* free localhost port, wait until it responds, then update nginx to point at the new port, and finally stop the old container.
+- Use `scripts/deploy/deploy_docker_remote.sh` with:
+  - `ZERO_DOWNTIME=true`
+  - `CONFIGURE_NGINX=true`
+  - `DOMAIN_NAME=...`
+
+Example (on the EC2 instance):
+```bash
+ZERO_DOWNTIME=true CONFIGURE_NGINX=true DOMAIN_NAME=africanlanguagelibrary.tchamna.com HOST_PORT=8050 \
+  bash scripts/deploy/deploy_docker_remote.sh
+```
+This script automatically picks a free port if `HOST_PORT` is busy, waits for the app to become ready, then switches nginx to the new port.
+
 ### Container won't start:
 ```bash
 # Check logs

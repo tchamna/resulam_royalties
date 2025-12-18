@@ -12,6 +12,8 @@ PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-}"
 CONFIGURE_NGINX="${CONFIGURE_NGINX:-false}"
 DOMAIN_NAME="${DOMAIN_NAME:-}"
 OLD_DOMAIN_NAME="${OLD_DOMAIN_NAME:-}"
+ZERO_DOWNTIME="${ZERO_DOWNTIME:-true}"
+STARTUP_TIMEOUT_SECONDS="${STARTUP_TIMEOUT_SECONDS:-600}"
 
 PORT_RANGE_START="${PORT_RANGE_START:-8050}"
 PORT_RANGE_END="${PORT_RANGE_END:-8099}"
@@ -42,6 +44,39 @@ pick_free_port() {
   return 1
 }
 
+container_exists() {
+  local name="$1"
+  docker ps -a --format '{{.Names}}' | grep -Fxq "$name"
+}
+
+container_running() {
+  local name="$1"
+  docker ps --format '{{.Names}}' | grep -Fxq "$name"
+}
+
+wait_for_http_ready() {
+  local port="$1"
+  local timeout="$2"
+  local url="http://127.0.0.1:${port}/"
+  local start_ts
+  start_ts="$(date +%s)"
+
+  echo "Waiting for app to become ready on ${url} (timeout: ${timeout}s)..."
+  while true; do
+    if curl -fsS "$url" >/dev/null 2>&1; then
+      echo "OK: app is responding on ${url}"
+      return 0
+    fi
+    local now_ts
+    now_ts="$(date +%s)"
+    if (( now_ts - start_ts >= timeout )); then
+      echo "ERROR: app did not become ready within ${timeout}s on ${url}"
+      return 1
+    fi
+    sleep 2
+  done
+}
+
 mkdir -p "${STATE_DIR}" || true
 
 # Allow "HOST_PORT=auto" to enable auto port selection without extra flags.
@@ -52,10 +87,23 @@ fi
 echo "Deploying container: ${CONTAINER_NAME}"
 echo "Requested bind   : 127.0.0.1:${HOST_PORT} -> ${DASH_PORT}"
 echo "Domain           : ${DOMAIN_NAME:-<none>}"
+echo "Zero downtime    : ${ZERO_DOWNTIME}"
 
-# Stop existing container first so redeploy to the same port works.
-docker stop "${CONTAINER_NAME}" 2>/dev/null || true
-docker rm "${CONTAINER_NAME}" 2>/dev/null || true
+# Zero-downtime requires the ability to switch nginx to a new port.
+CAN_SWITCH_PORT="false"
+if [[ "${CONFIGURE_NGINX}" == "true" && -n "${DOMAIN_NAME}" ]]; then
+  CAN_SWITCH_PORT="true"
+fi
+if [[ "${ZERO_DOWNTIME}" == "true" && "${CAN_SWITCH_PORT}" != "true" ]]; then
+  echo "WARNING: ZERO_DOWNTIME=true requires CONFIGURE_NGINX=true and DOMAIN_NAME; falling back to in-place restart."
+  ZERO_DOWNTIME="false"
+fi
+
+# Remember the previous port (used by the currently-running nginx config).
+OLD_HOST_PORT=""
+if [[ -f "${STATE_FILE}" ]]; then
+  OLD_HOST_PORT="$(cat "${STATE_FILE}" 2>/dev/null || true)"
+fi
 
 # If we have a persisted port, prefer it in auto mode.
 if [[ "${AUTO_PORT}" == "true" ]]; then
@@ -69,25 +117,26 @@ fi
 
 # Port conflict handling
 if is_port_listening "${HOST_PORT}"; then
-  if [[ "${AUTO_PORT}" == "true" ]]; then
+  if [[ "${ZERO_DOWNTIME}" == "true" ]]; then
     echo "Port ${HOST_PORT} is busy; selecting a free port in ${PORT_RANGE_START}-${PORT_RANGE_END}..."
     HOST_PORT="$(pick_free_port "${PORT_RANGE_START}" "${PORT_RANGE_END}")" || {
       echo "ERROR: No free port found in range ${PORT_RANGE_START}-${PORT_RANGE_END}."
       exit 1
     }
   else
-    echo "ERROR: Port ${HOST_PORT} is already in use on this EC2 instance."
-    sudo netstat -tlnp 2>/dev/null | grep ":${HOST_PORT} .*LISTEN" || true
-    echo "Tip: set HOST_PORT=auto (or AUTO_PORT=true) to auto-pick a free port."
-    exit 1
+    # In-place restart expects the port to be in use by the current container.
+    if container_exists "${CONTAINER_NAME}"; then
+      echo "Port ${HOST_PORT} is currently in use by ${CONTAINER_NAME}; will restart in-place."
+    else
+      echo "ERROR: Port ${HOST_PORT} is already in use on this EC2 instance."
+      sudo netstat -tlnp 2>/dev/null | grep ":${HOST_PORT} .*LISTEN" || true
+      echo "Tip: set ZERO_DOWNTIME=true and CONFIGURE_NGINX=true to deploy on a new port without downtime."
+      exit 1
+    fi
   fi
 fi
 
 echo "Using bind       : 127.0.0.1:${HOST_PORT} -> ${DASH_PORT}"
-
-if [[ "${AUTO_PORT}" == "true" ]]; then
-  echo "${HOST_PORT}" > "${STATE_FILE}" || true
-fi
 
 # Ensure AWS credentials exist for S3 sync (Dash container reads from /root/.aws mount)
 if [[ -n "${AWS_ACCESS_KEY_ID:-}" && -n "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
@@ -113,41 +162,103 @@ fi
 
 docker build -t resulam-royalties:latest .
 
-docker run -d \
-  --name "${CONTAINER_NAME}" \
-  --restart unless-stopped \
-  -p 127.0.0.1:${HOST_PORT}:${DASH_PORT} \
-  -v ~/.aws:/root/.aws:ro \
-  -e USE_S3_DATA="${USE_S3_DATA}" \
-  -e S3_BUCKET="${S3_BUCKET}" \
-  -e AWS_DEFAULT_REGION="${AWS_REGION}" \
-  -e AUTO_SYNC_INTERVAL="${AUTO_SYNC_INTERVAL}" \
-  -e PUBLIC_BASE_URL="${PUBLIC_BASE_URL}" \
-  resulam-royalties:latest
+if [[ "${ZERO_DOWNTIME}" == "true" ]]; then
+  NEXT_CONTAINER_NAME="${CONTAINER_NAME}--next"
+  docker rm -f "${NEXT_CONTAINER_NAME}" 2>/dev/null || true
+  cleanup_next() {
+    docker rm -f "${NEXT_CONTAINER_NAME}" 2>/dev/null || true
+  }
+  trap cleanup_next EXIT
 
-echo "Waiting for container to start..."
-sleep 5
+  docker run -d \
+    --name "${NEXT_CONTAINER_NAME}" \
+    --restart unless-stopped \
+    -p 127.0.0.1:${HOST_PORT}:${DASH_PORT} \
+    -v ~/.aws:/root/.aws:ro \
+    -e USE_S3_DATA="${USE_S3_DATA}" \
+    -e S3_BUCKET="${S3_BUCKET}" \
+    -e AWS_DEFAULT_REGION="${AWS_REGION}" \
+    -e AUTO_SYNC_INTERVAL="${AUTO_SYNC_INTERVAL}" \
+    -e PUBLIC_BASE_URL="${PUBLIC_BASE_URL}" \
+    resulam-royalties:latest
 
-if docker ps | grep -q "${CONTAINER_NAME}"; then
-  echo "OK: container is running"
-else
-  echo "ERROR: container failed to start"
-  docker logs "${CONTAINER_NAME}" || true
-  docker ps -a | grep "${CONTAINER_NAME}" || true
-  exit 1
-fi
+  echo "Waiting for container to start..."
+  sleep 2
 
-if [[ "${CONFIGURE_NGINX}" == "true" && -n "${DOMAIN_NAME}" ]]; then
+  if container_running "${NEXT_CONTAINER_NAME}"; then
+    echo "OK: next container is running: ${NEXT_CONTAINER_NAME}"
+  else
+    echo "ERROR: next container failed to start: ${NEXT_CONTAINER_NAME}"
+    docker logs "${NEXT_CONTAINER_NAME}" || true
+    docker ps -a | grep -F "${NEXT_CONTAINER_NAME}" || true
+    exit 1
+  fi
+
+  if ! wait_for_http_ready "${HOST_PORT}" "${STARTUP_TIMEOUT_SECONDS}"; then
+    echo "ERROR: next container did not become ready; keeping existing deployment unchanged."
+    echo "Last 200 lines of logs from ${NEXT_CONTAINER_NAME}:"
+    docker logs "${NEXT_CONTAINER_NAME}" --tail 200 || true
+    exit 1
+  fi
+
   if [[ -f scripts/deploy/setup_nginx_vhost.sh ]]; then
     chmod +x scripts/deploy/setup_nginx_vhost.sh || true
     DOMAIN_NAME="${DOMAIN_NAME}" OLD_DOMAIN_NAME="${OLD_DOMAIN_NAME}" UPSTREAM_PORT="${HOST_PORT}" \
       bash scripts/deploy/setup_nginx_vhost.sh
   else
-    echo "WARNING: scripts/deploy/setup_nginx_vhost.sh not found; skipping nginx config"
+    echo "ERROR: scripts/deploy/setup_nginx_vhost.sh not found; cannot switch nginx upstream port."
+    exit 1
   fi
-else
-  echo "Nginx configuration skipped (CONFIGURE_NGINX=${CONFIGURE_NGINX}, DOMAIN_NAME=${DOMAIN_NAME:-<none>})"
-fi
 
-echo "Container logs (last 50 lines):"
-docker logs "${CONTAINER_NAME}" --tail 50 || true
+  if container_exists "${CONTAINER_NAME}"; then
+    echo "Stopping previous container: ${CONTAINER_NAME}"
+    docker stop "${CONTAINER_NAME}" 2>/dev/null || true
+    docker rm "${CONTAINER_NAME}" 2>/dev/null || true
+  fi
+
+  echo "Promoting ${NEXT_CONTAINER_NAME} -> ${CONTAINER_NAME}"
+  docker rename "${NEXT_CONTAINER_NAME}" "${CONTAINER_NAME}"
+  echo "${HOST_PORT}" > "${STATE_FILE}" || true
+  trap - EXIT
+
+  echo "Container logs (last 80 lines):"
+  docker logs "${CONTAINER_NAME}" --tail 80 || true
+else
+  # In-place restart: same upstream port, but will cause brief downtime.
+  echo "In-place restart (may show 502 until the app finishes loading data)."
+  docker stop "${CONTAINER_NAME}" 2>/dev/null || true
+  docker rm "${CONTAINER_NAME}" 2>/dev/null || true
+
+  docker run -d \
+    --name "${CONTAINER_NAME}" \
+    --restart unless-stopped \
+    -p 127.0.0.1:${HOST_PORT}:${DASH_PORT} \
+    -v ~/.aws:/root/.aws:ro \
+    -e USE_S3_DATA="${USE_S3_DATA}" \
+    -e S3_BUCKET="${S3_BUCKET}" \
+    -e AWS_DEFAULT_REGION="${AWS_REGION}" \
+    -e AUTO_SYNC_INTERVAL="${AUTO_SYNC_INTERVAL}" \
+    -e PUBLIC_BASE_URL="${PUBLIC_BASE_URL}" \
+    resulam-royalties:latest
+
+  if ! wait_for_http_ready "${HOST_PORT}" "${STARTUP_TIMEOUT_SECONDS}"; then
+    echo "ERROR: container did not become ready."
+    docker logs "${CONTAINER_NAME}" --tail 200 || true
+    exit 1
+  fi
+
+  # If nginx is managed here, keep it pointing at HOST_PORT.
+  if [[ "${CONFIGURE_NGINX}" == "true" && -n "${DOMAIN_NAME}" ]]; then
+    if [[ -f scripts/deploy/setup_nginx_vhost.sh ]]; then
+      chmod +x scripts/deploy/setup_nginx_vhost.sh || true
+      DOMAIN_NAME="${DOMAIN_NAME}" OLD_DOMAIN_NAME="${OLD_DOMAIN_NAME}" UPSTREAM_PORT="${HOST_PORT}" \
+        bash scripts/deploy/setup_nginx_vhost.sh
+    else
+      echo "WARNING: scripts/deploy/setup_nginx_vhost.sh not found; skipping nginx config"
+    fi
+  else
+    echo "Nginx configuration skipped (CONFIGURE_NGINX=${CONFIGURE_NGINX}, DOMAIN_NAME=${DOMAIN_NAME:-<none>})"
+  fi
+
+  echo "${HOST_PORT}" > "${STATE_FILE}" || true
+fi
