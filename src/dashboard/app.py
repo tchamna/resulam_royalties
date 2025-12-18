@@ -201,6 +201,20 @@ class ResulamDashboard:
                 <meta name="twitter:image" content="__OG_IMAGE__" />
                 <style>
                     body.light-mode {
+                        /* Bootstrap variable overrides for DARKLY -> light look */
+                        --bs-body-bg: #f8f9fa;
+                        --bs-body-color: #212529;
+                        --bs-emphasis-color: #212529;
+                        --bs-secondary-color: #6c757d;
+                        --bs-tertiary-color: #6c757d;
+                        --bs-border-color: #dee2e6;
+                        --bs-card-bg: #ffffff;
+                        --bs-card-color: #212529;
+                        --bs-link-color: #0d6efd;
+                        --bs-link-hover-color: #0a58ca;
+                        --bs-nav-link-color: #212529;
+                        --bs-nav-link-hover-color: #0a58ca;
+
                         background-color: #f8f9fa !important;
                         color: #212529 !important;
                     }
@@ -235,6 +249,52 @@ class ResulamDashboard:
                     body.light-mode .card h4,
                     body.light-mode .card h5 {
                         color: #212529 !important;
+                    }
+
+                    body.light-mode a,
+                    body.light-mode a:visited {
+                        color: #0d6efd !important;
+                    }
+
+                    body.light-mode .nav-tabs {
+                        border-bottom-color: #dee2e6 !important;
+                    }
+                    body.light-mode .nav-tabs .nav-link {
+                        color: #212529 !important;
+                    }
+                    body.light-mode .nav-tabs .nav-link.active {
+                        color: #212529 !important;
+                        background-color: #ffffff !important;
+                        border-color: #dee2e6 #dee2e6 #ffffff !important;
+                    }
+
+                    body.light-mode .table {
+                        --bs-table-bg: #ffffff;
+                        --bs-table-color: #212529;
+                        --bs-table-border-color: #dee2e6;
+                        --bs-table-striped-bg: rgba(0, 0, 0, 0.03);
+                        --bs-table-striped-color: #212529;
+                        --bs-table-hover-bg: rgba(0, 0, 0, 0.06);
+                        --bs-table-hover-color: #212529;
+                    }
+
+                    body.light-mode .modal-content {
+                        background-color: #ffffff !important;
+                        color: #212529 !important;
+                    }
+                    body.light-mode .modal-header,
+                    body.light-mode .modal-footer {
+                        border-color: #dee2e6 !important;
+                    }
+
+                    body.light-mode .toast,
+                    body.light-mode .toast-header {
+                        background-color: #ffffff !important;
+                        color: #212529 !important;
+                        border-color: #dee2e6 !important;
+                    }
+                    body.light-mode .toast-header {
+                        background-color: #f8f9fa !important;
                     }
                     
                     /* Dropdown styling - target Dash Dropdown component */
@@ -284,6 +344,194 @@ class ResulamDashboard:
                     div.dash-dropdown .Select-option.is-focused {
                         background-color: #f0f0f0 !important;
                         color: #212529 !important;
+                    }
+
+                    /* Header hero */
+                    #header-container {
+                        position: relative;
+                        overflow: hidden;
+                        border-radius: 18px;
+                        border: 1px solid rgba(255, 255, 255, 0.08);
+                        background: linear-gradient(135deg, #0b1220, #111827);
+                    }
+                    #header-container::before {
+                        content: "";
+                        position: absolute;
+                        inset: -2px;
+                        pointer-events: none;
+                        background:
+                            radial-gradient(600px circle at 20% 20%, rgba(0, 221, 255, 0.18), transparent 55%),
+                            radial-gradient(520px circle at 85% 15%, rgba(255, 221, 0, 0.12), transparent 60%),
+                            radial-gradient(700px circle at 60% 110%, rgba(99, 102, 241, 0.14), transparent 60%);
+                        opacity: 0.95;
+                    }
+                    #header-container > * {
+                        position: relative;
+                    }
+                    #header-container h1 {
+                        font-weight: 800;
+                        letter-spacing: -0.02em;
+                    }
+                    #header-container p {
+                        font-size: 1.05rem;
+                    }
+                    .header-social-links .btn {
+                        border-radius: 999px;
+                        padding: 0.45rem 0.85rem;
+                        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
+                        transition: transform 120ms ease, box-shadow 120ms ease;
+                    }
+                    .header-social-links .btn:hover {
+                        transform: translateY(-1px);
+                        box-shadow: 0 14px 30px rgba(0, 0, 0, 0.32);
+                    }
+
+                    body.light-mode #header-container {
+                        border-color: #dee2e6 !important;
+                        background: linear-gradient(135deg, #ffffff, #f8f9fa) !important;
+                    }
+                    body.light-mode #header-container::before {
+                        opacity: 0.35;
+                    }
+                    body.light-mode .header-social-links .btn {
+                        box-shadow: 0 10px 18px rgba(0, 0, 0, 0.10);
+                    }
+                    body.light-mode .header-social-links .btn:hover {
+                        box-shadow: 0 14px 22px rgba(0, 0, 0, 0.14);
+                    }
+
+                    /* Light-mode contact buttons: higher contrast + brand outline */
+                    body.light-mode #theme-toggle-btn {
+                        border-color: #adb5bd !important;
+                        color: #212529 !important;
+                        background-color: #ffffff !important;
+                    }
+                    body.light-mode #theme-toggle-btn:hover {
+                        background-color: #f1f3f5 !important;
+                    }
+
+                    body.light-mode .header-social-links .contact-btn {
+                        background-color: #ffffff !important;
+                        border: 1px solid #ced4da !important;
+                        color: #212529 !important;
+                        font-weight: 600;
+                    }
+                    body.light-mode .header-social-links .contact-btn:hover {
+                        color: #ffffff !important;
+                    }
+
+                    body.light-mode .header-social-links .contact-web {
+                        border-color: #0d6efd !important;
+                        color: #0d6efd !important;
+                    }
+                    body.light-mode .header-social-links .contact-web:hover {
+                        background-color: #0d6efd !important;
+                    }
+
+                    body.light-mode .header-social-links .contact-youtube,
+                    body.light-mode .header-social-links .contact-youtube-nufi {
+                        border-color: #dc3545 !important;
+                        color: #dc3545 !important;
+                    }
+                    body.light-mode .header-social-links .contact-youtube:hover,
+                    body.light-mode .header-social-links .contact-youtube-nufi:hover {
+                        background-color: #dc3545 !important;
+                    }
+
+                    body.light-mode .header-social-links .contact-facebook {
+                        border-color: #0d6efd !important;
+                        color: #0d6efd !important;
+                    }
+                    body.light-mode .header-social-links .contact-facebook:hover {
+                        background-color: #0d6efd !important;
+                    }
+
+                    body.light-mode .header-social-links .contact-linkedin {
+                        border-color: #0a66c2 !important;
+                        color: #0a66c2 !important;
+                    }
+                    body.light-mode .header-social-links .contact-linkedin:hover {
+                        background-color: #0a66c2 !important;
+                    }
+
+                    /* KPI metric cards */
+                    .metric-card {
+                        position: relative;
+                        overflow: hidden;
+                        border-radius: 16px;
+                        border: 1px solid rgba(255, 255, 255, 0.08);
+                        background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+                        transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+                    }
+                    .metric-card::after {
+                        content: "";
+                        position: absolute;
+                        inset: 0;
+                        pointer-events: none;
+                        opacity: 0.9;
+                    }
+                    .metric-card.metric-books::after {
+                        background: radial-gradient(180px circle at 18% 22%, rgba(0, 221, 255, 0.20), transparent 60%);
+                    }
+                    .metric-card.metric-returns::after {
+                        background: radial-gradient(180px circle at 18% 22%, rgba(255, 51, 51, 0.18), transparent 60%);
+                    }
+                    .metric-card.metric-revenue::after {
+                        background: radial-gradient(180px circle at 18% 22%, rgba(0, 221, 255, 0.18), transparent 60%);
+                    }
+                    .metric-card.metric-titles::after {
+                        background: radial-gradient(180px circle at 18% 22%, rgba(173, 181, 189, 0.22), transparent 60%);
+                    }
+                    .metric-card.metric-authors::after {
+                        background: radial-gradient(180px circle at 18% 22%, rgba(255, 221, 0, 0.20), transparent 60%);
+                    }
+                    .metric-card:hover {
+                        transform: translateY(-2px);
+                        border-color: rgba(255, 255, 255, 0.14);
+                        box-shadow: 0 18px 38px rgba(0, 0, 0, 0.35);
+                    }
+                    .metric-card .card-body {
+                        position: relative;
+                        z-index: 1;
+                    }
+                    .metric-card .card-body > div:nth-child(1) {
+                        width: 44px !important;
+                        height: 44px !important;
+                        border-radius: 999px !important;
+                        display: inline-flex !important;
+                        align-items: center !important;
+                        justify-content: center !important;
+                        margin-bottom: 0.35rem !important;
+                        background: rgba(255, 255, 255, 0.07) !important;
+                        border: 1px solid rgba(255, 255, 255, 0.10) !important;
+                        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22) !important;
+                    }
+                    .metric-title {
+                        font-weight: 600;
+                        letter-spacing: 0.02em;
+                        text-transform: uppercase;
+                        opacity: 0.88;
+                    }
+                    .metric-value {
+                        letter-spacing: -0.02em;
+                        font-weight: 800;
+                    }
+
+                    body.light-mode .metric-card {
+                        border-color: #dee2e6 !important;
+                        background: #ffffff !important;
+                    }
+                    body.light-mode .metric-card:hover {
+                        box-shadow: 0 16px 28px rgba(0, 0, 0, 0.14);
+                    }
+                    body.light-mode .metric-card .card-body > div:nth-child(1) {
+                        background: rgba(13, 110, 253, 0.07) !important;
+                        border-color: rgba(13, 110, 253, 0.14) !important;
+                        box-shadow: 0 10px 18px rgba(0, 0, 0, 0.10) !important;
+                    }
+                    body.light-mode .metric-title {
+                        color: #495057 !important;
+                        opacity: 1;
                     }
                 </style>
             </head>
@@ -367,6 +615,7 @@ class ResulamDashboard:
                                 rel="noopener noreferrer",
                                 color="light",
                                 size="sm",
+                                className="contact-btn contact-web",
                             ),
                             dbc.Button(
                                 [html.I(className="fab fa-youtube me-2"), "YouTube Resulam"],
@@ -375,6 +624,7 @@ class ResulamDashboard:
                                 rel="noopener noreferrer",
                                 color="danger",
                                 size="sm",
+                                className="contact-btn contact-youtube",
                             ),
                             dbc.Button(
                                 [html.I(className="fab fa-youtube me-2"), "YouTube Nufi"],
@@ -383,6 +633,7 @@ class ResulamDashboard:
                                 rel="noopener noreferrer",
                                 color="danger",
                                 size="sm",
+                                className="contact-btn contact-youtube-nufi",
                             ),
                             dbc.Button(
                                 [html.I(className="fab fa-facebook me-2"), "Facebook"],
@@ -391,6 +642,7 @@ class ResulamDashboard:
                                 rel="noopener noreferrer",
                                 color="primary",
                                 size="sm",
+                                className="contact-btn contact-facebook",
                             ),
                             dbc.Button(
                                 [html.I(className="fab fa-linkedin me-2"), "LinkedIn"],
@@ -399,6 +651,7 @@ class ResulamDashboard:
                                 rel="noopener noreferrer",
                                 color="info",
                                 size="sm",
+                                className="contact-btn contact-linkedin",
                             ),
                         ],
                         className="header-social-links d-flex flex-wrap justify-content-center gap-2 mb-2",
@@ -425,7 +678,8 @@ class ResulamDashboard:
                 n_intervals=0,
                 max_intervals=1,
             ),
-            dcc.Store(id="theme-store", data="dark")
+            dcc.Store(id="theme-store", data="dark"),
+            dcc.Store(id="theme-apply-signal", data=0),
         ], fluid=True, className="bg-dark py-4 mb-4", id="header-container")
         
         # Year filter section with dropdown multi-select
@@ -561,6 +815,7 @@ class ResulamDashboard:
         # Common card style for consistent sizing
         metric_card_style = {
             "minHeight": "130px",
+            "minWidth": "220px",
             "height": "100%"
         }
         metric_card_body_style = {
@@ -570,7 +825,7 @@ class ResulamDashboard:
             "alignItems": "center",
             "padding": "0.75rem 0.25rem"
         }
-        metric_title_style = {"color": "#ffffff", "fontWeight": "600", "fontSize": "0.85rem", "marginBottom": "0.25rem", "whiteSpace": "nowrap"}
+        metric_title_style = {"fontWeight": "600", "fontSize": "0.85rem", "marginBottom": "0.25rem", "whiteSpace": "nowrap"}
         metric_value_style_base = {"fontWeight": "700", "fontSize": "2.5rem", "marginBottom": "0", "whiteSpace": "nowrap"}
         
         metrics_row = dbc.Row([
@@ -578,46 +833,46 @@ class ResulamDashboard:
                 dbc.Card([
                     dbc.CardBody([
                         html.Div("📖", className="text-center", style={"fontSize": "1.5rem"}),
-                        html.Div("Total Books Sold", className="text-center", style=metric_title_style),
-                        html.Div(id="metric-books-sold", className="text-center", style={**metric_value_style_base, "color": "#00DDFF"})
+                        html.Div("Total Books Sold", className="text-center metric-title", style=metric_title_style),
+                        html.Div(id="metric-books-sold", className="text-center metric-value", style={**metric_value_style_base, "color": "#00DDFF"})
                     ], style=metric_card_body_style)
-                ], className="shadow-sm", style=metric_card_style)
+                ], className="shadow-sm metric-card metric-books", style=metric_card_style)
             ], width=True, className="mb-2 px-1"),
             dbc.Col([
                 dbc.Card([
                     dbc.CardBody([
                         html.Div("🔄", className="text-center", style={"fontSize": "1.5rem"}),
-                        html.Div("Return Books", className="text-center", style=metric_title_style),
-                        html.Div(id="metric-returns", className="text-center", style={**metric_value_style_base, "color": "#FF3333"})
+                        html.Div("Return Books", className="text-center metric-title", style=metric_title_style),
+                        html.Div(id="metric-returns", className="text-center metric-value", style={**metric_value_style_base, "color": "#FF3333"})
                     ], style=metric_card_body_style)
-                ], className="shadow-sm", style=metric_card_style)
+                ], className="shadow-sm metric-card metric-returns", style=metric_card_style)
             ], width=True, className="mb-2 px-1"),
             dbc.Col([
                 dbc.Card([
                     dbc.CardBody([
                         html.Div("💵", className="text-center", style={"fontSize": "1.5rem"}),
-                        html.Div("Net Revenue", className="text-center", style=metric_title_style),
-                        html.Div(id="metric-net-revenue", className="text-center", style={**metric_value_style_base, "color": "#00DDFF"})
+                        html.Div("Net Revenue", className="text-center metric-title", style=metric_title_style),
+                        html.Div(id="metric-net-revenue", className="text-center metric-value", style={**metric_value_style_base, "color": "#00DDFF"})
                     ], style=metric_card_body_style)
-                ], className="shadow-sm", style=metric_card_style)
+                ], className="shadow-sm metric-card metric-revenue", style=metric_card_style)
             ], width=True, className="mb-2 px-1"),
             dbc.Col([
                 dbc.Card([
                     dbc.CardBody([
                         html.Div("📚", className="text-center", style={"fontSize": "1.5rem"}),
-                        html.Div("Unique Titles", className="text-center", style=metric_title_style),
-                        html.Div(id="metric-titles", className="text-center", style={**metric_value_style_base, "color": "#888888"})
+                        html.Div("Unique Titles", className="text-center metric-title", style=metric_title_style),
+                        html.Div(id="metric-titles", className="text-center metric-value", style={**metric_value_style_base, "color": "#888888"})
                     ], style=metric_card_body_style)
-                ], className="shadow-sm", style=metric_card_style)
+                ], className="shadow-sm metric-card metric-titles", style=metric_card_style)
             ], width=True, className="mb-2 px-1"),
             dbc.Col([
                 dbc.Card([
                     dbc.CardBody([
                         html.Div("🧑🏿‍💼", className="text-center", style={"fontSize": "1.5rem"}),
-                        html.Div("Authors", className="text-center", style=metric_title_style),
-                        html.Div(id="metric-authors", className="text-center", style={**metric_value_style_base, "color": "#FFDD00"})
+                        html.Div("Authors", className="text-center metric-title", style=metric_title_style),
+                        html.Div(id="metric-authors", className="text-center metric-value", style={**metric_value_style_base, "color": "#FFDD00"})
                     ], style=metric_card_body_style)
-                ], className="shadow-sm", style=metric_card_style)
+                ], className="shadow-sm metric-card metric-authors", style=metric_card_style)
             ], width=True, className="mb-2 px-1")
         ], className="mb-3 g-2 flex-nowrap", style={"overflowX": "auto"})
         
@@ -768,6 +1023,40 @@ class ResulamDashboard:
         )
         def _hide_device_warning(n_intervals):
             return not bool(n_intervals)
+
+        @self.app.callback(
+            Output("theme-store", "data"),
+            Output("theme-icon", "className"),
+            Output("header-container", "className"),
+            Input("theme-toggle-btn", "n_clicks"),
+            State("theme-store", "data"),
+            prevent_initial_call=True,
+        )
+        def toggle_theme(_n_clicks, current_theme):
+            """Toggle between light and dark mode."""
+            current_theme = current_theme or "dark"
+            new_theme = "light" if current_theme == "dark" else "dark"
+            icon_class = "fas fa-sun" if new_theme == "dark" else "fas fa-moon"
+            header_class = "bg-light py-4 mb-4" if new_theme == "light" else "bg-dark py-4 mb-4"
+            return new_theme, icon_class, header_class
+
+        self.app.clientside_callback(
+            """
+            function(theme) {
+                try {
+                    if (theme === 'light') {
+                        document.body.classList.add('light-mode');
+                    } else {
+                        document.body.classList.remove('light-mode');
+                    }
+                } catch (e) {}
+                return Date.now();
+            }
+            """,
+            Output("theme-apply-signal", "data"),
+            Input("theme-store", "data"),
+            prevent_initial_call=False,
+        )
 
         # Client-side: ensure a stable per-browser user id (stored locally).
         self.app.clientside_callback(
@@ -3102,98 +3391,6 @@ class ResulamDashboard:
             ]),
             dbc.Row(book_cards)
         ], fluid=True)
-        
-        # Theme toggle with proper theme switching
-        @self.app.callback(
-            Output("theme-store", "data"),
-            Output("theme-icon", "className"),
-            Output("header-container", "className"),
-            Input("theme-toggle-btn", "n_clicks"),
-            State("theme-store", "data"),
-            prevent_initial_call=True
-        )
-        def toggle_theme(n_clicks, current_theme):
-            """Toggle between light and dark mode"""
-            new_theme = "light" if current_theme == "dark" else "dark"
-            icon_class = "fas fa-moon" if new_theme == "dark" else "fas fa-sun"
-            header_class = "bg-light py-4 mb-4" if new_theme == "light" else "bg-dark py-4 mb-4"
-            return new_theme, icon_class, header_class
-        
-        # Apply theme to body element using clientside callback
-        self.app.clientside_callback(
-            """
-            function(theme) {
-                if (theme === 'light') {
-                    document.body.classList.add('light-mode');
-                } else {
-                    document.body.classList.remove('light-mode');
-                }
-                return theme;
-            }
-            """,
-            Output("theme-store", "data", allow_duplicate=True),
-            Input("theme-store", "data"),
-            prevent_initial_call=True
-        )
-        
-        # Returns modal toggle
-        @self.app.callback(
-            Output("returns-modal", "is_open"),
-            Input("returns-details-btn", "n_clicks"),
-            Input("returns-close-btn", "n_clicks"),
-            State("returns-modal", "is_open"),
-            prevent_initial_call=True
-        )
-        def toggle_returns_modal(open_clicks, close_clicks, is_open):
-            """Toggle returns details modal"""
-            return not is_open
-        # Populate returns table
-        @self.app.callback(
-            Output("returns-table-content", "children"),
-            Input("year-filter-store", "data"),
-            Input("language-filter", "value"),
-            Input("booktype-filter", "value"),
-            Input("book-filter", "value"),
-            Input("data-refresh-signal", "data"),
-            prevent_initial_call=False
-        )
-        def update_returns_table(selected_years, selected_language, selected_booktype, selected_book, refresh_signal):
-            """Show books with refunds"""
-            if not selected_years:
-                filtered_df = self.royalties
-            else:
-                filtered_df = self.royalties[self.royalties['Year Sold'].isin(selected_years)]
-            
-            if selected_language and selected_language != "all":
-                filtered_df = filtered_df[filtered_df['Language'] == selected_language]
-            
-            if selected_booktype and selected_booktype != "all":
-                filtered_df = filtered_df[filtered_df['BookType'] == selected_booktype]
-            
-            if selected_book and selected_book != "all":
-                filtered_df = filtered_df[filtered_df['book_nick_name'] == selected_book]
-            
-            # Get books with refunds - use book_nick_name (nickname) instead of full Title
-            returns_df = filtered_df[filtered_df['Units Refunded'] > 0][['book_nick_name', 'Units Sold', 'Units Refunded', 'Marketplace', 'Royalty Date']].copy()
-            returns_df = returns_df.rename(columns={'book_nick_name': 'Book'})
-            returns_df = returns_df.sort_values('Units Refunded', ascending=False)
-            
-            if len(returns_df) == 0:
-                return html.Div([
-                    html.P("No returned books in the selected period.", className="text-muted")
-                ])
-            
-            return html.Div([
-                html.P(f"Total returned books: {int(returns_df['Units Refunded'].sum())}", className="fw-bold mb-3"),
-                dbc.Table.from_dataframe(
-                    returns_df.head(50),
-                    striped=True,
-                    bordered=True,
-                    hover=True,
-                    responsive=True,
-                    size="sm"
-                )
-            ])
     
     def run(self, debug: bool = None, host: str = None, port: int = None):
         """Run the dashboard server"""
