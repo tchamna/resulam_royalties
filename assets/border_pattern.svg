@@ -8,10 +8,16 @@
   </defs>
 
   <!-- transparent background; this tile is used as a repeating border overlay -->
-  <g class="s">
-    <!-- top/bottom rails -->
-    <path d="M0 10H220"/>
-    <path d="M0 130H220"/>
+  <!-- corner frame marks (avoid full-width horizontal rails that look like a ruler) -->
+  <g class="t">
+    <!-- top-left -->
+    <path d="M6 10H34M6 10V28"/>
+    <!-- top-right -->
+    <path d="M214 10H186M214 10V28"/>
+    <!-- bottom-left -->
+    <path d="M6 130H34M6 130V112"/>
+    <!-- bottom-right -->
+    <path d="M214 130H186M214 130V112"/>
   </g>
 
   <!-- left/right chevrons -->
