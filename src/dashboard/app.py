@@ -706,6 +706,10 @@ class ResulamDashboard:
             all_categories = sorted(books_df['category'].dropna().unique().tolist())
         except Exception:
             all_categories = []
+
+        category_label_overrides = {
+            "Phrasebook - Guide de Conversations": "Phrasebooks-Guide de conversation",
+        }
         
         filter_section = dbc.Container([
             # Filter order: Year, Languages, Category, Books, Authors, Type
@@ -743,7 +747,7 @@ class ResulamDashboard:
                     dcc.Dropdown(
                         id="category-filter",
                         options=[{"label": f"All Categories ({len(all_categories)})", "value": "all"}] + [
-                            {"label": cat, "value": cat} for cat in all_categories
+                            {"label": category_label_overrides.get(cat, cat), "value": cat} for cat in all_categories
                         ],
                         value="all",
                         multi=False,
@@ -1475,19 +1479,44 @@ class ResulamDashboard:
             # Get filtered royalties data (without category filter)
             df, _ = _get_filtered_data(years, selected_language, selected_author, selected_booktype, selected_book, None)
             
-            # Map nicknames back to categories from books database
+            category_label_overrides = {
+                "Phrasebook - Guide de Conversations": "Phrasebooks-Guide de conversation",
+            }
+
+            # Map royalties nicknames back to categories from books database.
+            # Royalties use short nicknames, while the DB may use long descriptive nicknames.
+            # Bridge via DB_NICKNAME_TO_ROYALTY when available.
             books_df = pd.read_csv(BOOKS_DATABASE_PATH)
-            nickname_to_category = dict(zip(books_df['book_nick_name'], books_df['category']))
+            db_nickname_to_category = dict(zip(books_df['book_nick_name'], books_df['category']))
+
+            royalty_nickname_to_categories = {}
+            for db_nick, cat in db_nickname_to_category.items():
+                if not cat:
+                    continue
+                royalty_nickname_to_categories.setdefault(db_nick, set()).add(cat)
+
+            try:
+                from src.hardcoded_nicknames import DB_NICKNAME_TO_ROYALTY
+
+                for db_nick, royalty_nicks in DB_NICKNAME_TO_ROYALTY.items():
+                    cat = db_nickname_to_category.get(db_nick)
+                    if not cat:
+                        continue
+                    for royalty_nick in royalty_nicks:
+                        royalty_nickname_to_categories.setdefault(royalty_nick, set()).add(cat)
+            except Exception:
+                pass
             
             available_categories = set()
             for nick in df['book_nick_name'].dropna().unique():
-                if nick in nickname_to_category and nickname_to_category[nick]:
-                    available_categories.add(nickname_to_category[nick])
+                for cat in royalty_nickname_to_categories.get(nick, set()):
+                    if cat:
+                        available_categories.add(cat)
             
             available_categories = sorted(list(available_categories))
             
             return [{"label": f"All Categories ({len(available_categories)})", "value": "all"}] + [
-                {"label": cat, "value": cat} for cat in available_categories
+                {"label": category_label_overrides.get(cat, cat), "value": cat} for cat in available_categories
             ]
 
         @self.app.callback(
@@ -3119,29 +3148,35 @@ class ResulamDashboard:
             if len(author_filtered) > 0:
                 filtered_books = author_filtered
         
-        # Apply book filter if selected (by nickname)
-        # Use flexible matching since nicknames differ between royalties data and books database
+        # Apply book filter if selected.
+        # Here we expect a canonical nickname (e.g. "ewondo_conversation_de_base").
+        # Avoid fuzzy matching because it can wrongly match other languages in the same category
+        # (e.g., all "conversation_de_base" books).
         if selected_book and selected_book != "all":
-            selected_book_normalized = normalize_text(selected_book).replace('_', ' ')
-            
-            def book_matches(book_nickname):
-                if pd.isna(book_nickname) or not book_nickname:
-                    return False
-                book_nickname_normalized = normalize_text(book_nickname).replace('_', ' ')
-                # Check for exact match first
-                if book_nickname_normalized == selected_book_normalized:
-                    return True
-                # Check if one contains the other (handles partial matches)
-                if selected_book_normalized in book_nickname_normalized or book_nickname_normalized in selected_book_normalized:
-                    return True
-                # Check word overlap - if most words match
-                selected_words = set(selected_book_normalized.split())
-                book_words = set(book_nickname_normalized.split())
-                common = selected_words & book_words
-                # At least 2 significant words match
-                return len(common) >= 2
-            
-            book_filtered = filtered_books[filtered_books['book_nick_name'].apply(book_matches)]
+            candidate_db_nicknames = {selected_book}
+            try:
+                from src.hardcoded_nicknames import DB_NICKNAME_TO_ROYALTY
+
+                for db_nick, royalty_nicks in DB_NICKNAME_TO_ROYALTY.items():
+                    if db_nick == selected_book or selected_book in royalty_nicks:
+                        candidate_db_nicknames.add(db_nick)
+            except Exception:
+                pass
+
+            book_filtered = filtered_books[filtered_books["book_nick_name"].isin(candidate_db_nicknames)]
+
+            # Fallback: if nothing matched, attempt a strict normalized compare.
+            if len(book_filtered) == 0:
+                selected_book_normalized = normalize_text(selected_book).replace("_", " ")
+
+                def book_matches_strict(book_nickname):
+                    if pd.isna(book_nickname) or not book_nickname:
+                        return False
+                    book_nickname_normalized = normalize_text(book_nickname).replace("_", " ")
+                    return book_nickname_normalized == selected_book_normalized
+
+                book_filtered = filtered_books[filtered_books["book_nick_name"].apply(book_matches_strict)]
+
             if len(book_filtered) > 0:
                 filtered_books = book_filtered
         
