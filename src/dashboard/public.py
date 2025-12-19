@@ -389,10 +389,29 @@ class PublicDashboard:
                         inset: -2px;
                         pointer-events: none;
                         background:
-                            radial-gradient(600px circle at 20% 20%, rgba(0, 221, 255, 0.18), transparent 55%),
-                            radial-gradient(520px circle at 85% 15%, rgba(255, 221, 0, 0.12), transparent 60%),
+                            radial-gradient(600px circle at 20% 35%, rgba(0, 221, 255, 0.16), transparent 55%),
+                            radial-gradient(520px circle at 85% 30%, rgba(255, 221, 0, 0.10), transparent 60%),
                             radial-gradient(700px circle at 60% 110%, rgba(99, 102, 241, 0.14), transparent 60%);
                         opacity: 0.95;
+                        /* Keep the glow inside the frame so the border pattern stays crisp on all sides. */
+                        clip-path: inset(14px round 18px);
+                    }
+                    #header-container::after {
+                        content: "";
+                        position: absolute;
+                        inset: 0;
+                        pointer-events: none;
+                        border-radius: 18px;
+                        /* Frame thickness: make the top edge thicker so the pattern reads clearly. */
+                        padding: 24px 14px 14px 14px;
+                        background-image: url("assets/border_pattern.svg");
+                        background-repeat: repeat;
+                        background-size: 220px 140px;
+                        opacity: 0.34;
+                        filter: contrast(1.18) brightness(1.06);
+                        -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+                        -webkit-mask-composite: xor;
+                        mask-composite: exclude;
                     }
                     #header-container > * {
                         position: relative;
@@ -415,12 +434,62 @@ class PublicDashboard:
                         box-shadow: 0 14px 30px rgba(0, 0, 0, 0.32);
                     }
 
+                    /* Theme toggle button: pin top-right and match hero style */
+                    #theme-toggle-btn {
+                        position: absolute;
+                        top: 18px;
+                        right: 18px;
+                        z-index: 5;
+                        width: 56px;
+                        height: 56px;
+                        padding: 0 !important;
+                        border-radius: 16px;
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                        background: rgba(17, 24, 39, 0.38) !important;
+                        border: 1px solid rgba(255, 255, 255, 0.22) !important;
+                        color: #f8fafc !important;
+                        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+                        backdrop-filter: blur(10px);
+                        -webkit-backdrop-filter: blur(10px);
+                        transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+                    }
+                    #theme-toggle-btn:hover {
+                        transform: translateY(-1px);
+                        background: rgba(17, 24, 39, 0.48) !important;
+                        box-shadow: 0 16px 34px rgba(0, 0, 0, 0.42);
+                    }
+                    #theme-toggle-btn:focus {
+                        box-shadow: 0 0 0 0.25rem rgba(0, 221, 255, 0.22), 0 16px 34px rgba(0, 0, 0, 0.42);
+                    }
+                    #theme-icon {
+                        font-size: 1.35rem;
+                        line-height: 1;
+                    }
+                    @media (max-width: 768px) {
+                        #theme-toggle-btn {
+                            top: 14px;
+                            right: 14px;
+                            width: 48px;
+                            height: 48px;
+                            border-radius: 14px;
+                        }
+                        #theme-icon {
+                            font-size: 1.2rem;
+                        }
+                    }
+
                     body.light-mode #header-container {
                         border-color: #dee2e6 !important;
                         background: linear-gradient(135deg, #ffffff, #f8f9fa) !important;
                     }
                     body.light-mode #header-container::before {
                         opacity: 0.35;
+                    }
+                    body.light-mode #header-container::after {
+                        opacity: 0.18;
+                        filter: invert(1) brightness(0.55);
                     }
                     body.light-mode .header-social-links .btn {
                         box-shadow: 0 10px 18px rgba(0, 0, 0, 0.10);
@@ -431,12 +500,14 @@ class PublicDashboard:
 
                     /* Light-mode contact buttons: higher contrast + brand outline */
                     body.light-mode #theme-toggle-btn {
-                        border-color: #adb5bd !important;
+                        background: rgba(255, 255, 255, 0.74) !important;
+                        border-color: rgba(33, 37, 41, 0.18) !important;
                         color: #212529 !important;
-                        background-color: #ffffff !important;
+                        box-shadow: 0 12px 22px rgba(0, 0, 0, 0.12);
                     }
                     body.light-mode #theme-toggle-btn:hover {
-                        background-color: #f1f3f5 !important;
+                        background: rgba(248, 249, 250, 0.92) !important;
+                        box-shadow: 0 16px 28px rgba(0, 0, 0, 0.14);
                     }
 
                     body.light-mode .header-social-links .contact-btn {
@@ -492,6 +563,21 @@ class PublicDashboard:
                         background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
                         transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
                     }
+                    .metric-card::before {
+                        content: "";
+                        position: absolute;
+                        inset: 0;
+                        pointer-events: none;
+                        border-radius: 16px;
+                        padding: 10px;
+                        background-image: url("assets/border_pattern.svg");
+                        background-repeat: repeat;
+                        background-size: 220px 140px;
+                        opacity: 0.14;
+                        -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+                        -webkit-mask-composite: xor;
+                        mask-composite: exclude;
+                    }
                     .metric-card::after {
                         content: "";
                         position: absolute;
@@ -544,6 +630,10 @@ class PublicDashboard:
                         border-color: #dee2e6 !important;
                         background: #ffffff !important;
                     }
+                    body.light-mode .metric-card::before {
+                        opacity: 0.18;
+                        filter: invert(1) brightness(0.55);
+                    }
                     body.light-mode .metric-card:hover {
                         box-shadow: 0 16px 28px rgba(0, 0, 0, 0.14);
                     }
@@ -595,6 +685,14 @@ class PublicDashboard:
         
         # Header
         header = dbc.Container([
+            dbc.Button(
+                html.I(className="fas fa-sun", id="theme-icon"),
+                id="theme-toggle-btn",
+                color="light",
+                outline=True,
+                size="lg",
+                title="Toggle light/dark mode",
+            ),
             dbc.Row([
                 dbc.Col([
                     html.Div([
@@ -615,17 +713,7 @@ class PublicDashboard:
                         f"Book Sales Analysis: 2015 - {CURRENT_YEAR}",
                         className="text-center text-muted mb-4"
                     )
-                ], width=10),
-                dbc.Col([
-                    dbc.Button(
-                        html.I(className="fas fa-sun", id="theme-icon"),
-                        id="theme-toggle-btn",
-                        color="light",
-                        outline=True,
-                        size="lg",
-                        className="mt-2"
-                    )
-                ], width=2, className="text-end")
+                ], width=12),
             ]),
             dbc.Row([
                 dbc.Col(
