@@ -52,6 +52,17 @@ SSL_PRIVKEY="${SSL_DIR}/privkey.pem"
 SSL_OPTIONS="/etc/letsencrypt/options-ssl-nginx.conf"
 SSL_DHPARAM="/etc/letsencrypt/ssl-dhparams.pem"
 HAS_SSL="false"
+if [[ ! -f "${SSL_FULLCHAIN}" || ! -f "${SSL_PRIVKEY}" ]]; then
+  # Certbot commonly creates suffixed directories like "<domain>-0001".
+  for d in /etc/letsencrypt/live/${DOMAIN_NAME}*; do
+    if [[ -f "${d}/fullchain.pem" && -f "${d}/privkey.pem" ]]; then
+      SSL_DIR="${d}"
+      SSL_FULLCHAIN="${SSL_DIR}/fullchain.pem"
+      SSL_PRIVKEY="${SSL_DIR}/privkey.pem"
+      break
+    fi
+  done
+fi
 if [[ -f "${SSL_FULLCHAIN}" && -f "${SSL_PRIVKEY}" ]]; then
   HAS_SSL="true"
 fi
