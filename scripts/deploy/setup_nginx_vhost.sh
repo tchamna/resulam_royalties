@@ -14,21 +14,114 @@ if [[ -z "${UPSTREAM_PORT}" ]]; then
   exit 1
 fi
 
-if [[ -d /etc/nginx/conf.d ]]; then
-  NGINX_DIR="/etc/nginx/conf.d"
-  NGINX_FILE="${NGINX_DIR}/${DOMAIN_NAME}.conf"
+# Prefer updating the existing vhost file (especially important when SSL is managed by certbot),
+# otherwise fall back to a reasonable default location.
+EXISTING_NGINX_FILE=""
+if sudo nginx -T >/dev/null 2>&1; then
+  EXISTING_NGINX_FILE="$(sudo nginx -T 2>/dev/null | awk -v domain="${DOMAIN_NAME}" '
+    /^# configuration file / {
+      file=$4
+      sub(":$","",file)
+    }
+    $0 ~ /server_name/ && index($0, domain) {
+      print file
+      exit
+    }
+  ')"
+fi
+
+if [[ -n "${EXISTING_NGINX_FILE}" ]]; then
+  NGINX_DIR="$(dirname "${EXISTING_NGINX_FILE}")"
+  NGINX_FILE="${EXISTING_NGINX_FILE}"
 elif [[ -d /etc/nginx/sites-available ]]; then
   NGINX_DIR="/etc/nginx/sites-available"
   NGINX_FILE="${NGINX_DIR}/${DOMAIN_NAME}"
+elif [[ -d /etc/nginx/conf.d ]]; then
+  NGINX_DIR="/etc/nginx/conf.d"
+  NGINX_FILE="${NGINX_DIR}/${DOMAIN_NAME}.conf"
 else
-  echo "ERROR: Could not find an nginx config directory (/etc/nginx/conf.d or /etc/nginx/sites-available)."
+  echo "ERROR: Could not find an nginx config directory (/etc/nginx/sites-available or /etc/nginx/conf.d)."
   exit 1
 fi
 
 echo "Writing nginx config: ${NGINX_FILE}"
 
+SSL_DIR="/etc/letsencrypt/live/${DOMAIN_NAME}"
+SSL_FULLCHAIN="${SSL_DIR}/fullchain.pem"
+SSL_PRIVKEY="${SSL_DIR}/privkey.pem"
+SSL_OPTIONS="/etc/letsencrypt/options-ssl-nginx.conf"
+SSL_DHPARAM="/etc/letsencrypt/ssl-dhparams.pem"
+HAS_SSL="false"
+if [[ -f "${SSL_FULLCHAIN}" && -f "${SSL_PRIVKEY}" ]]; then
+  HAS_SSL="true"
+fi
+
 TMP="$(mktemp)"
-cat > "${TMP}" <<NGXEOF
+if [[ "${HAS_SSL}" == "true" ]]; then
+  # When SSL certs exist, serve the app on 443 and redirect 80 -> 443.
+  # This avoids the common situation where HTTPS keeps proxying to an old port (502)
+  # after a zero-downtime deployment changes the upstream port.
+  cat > "${TMP}" <<NGXEOF
+server {
+    listen 80;
+    server_name ${DOMAIN_NAME};
+
+    client_max_body_size 25m;
+
+    # Allow ACME HTTP-01 challenges (safe even if unused).
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name ${DOMAIN_NAME};
+
+    client_max_body_size 25m;
+
+    ssl_certificate ${SSL_FULLCHAIN};
+    ssl_certificate_key ${SSL_PRIVKEY};
+NGXEOF
+
+  if [[ -f "${SSL_OPTIONS}" ]]; then
+    cat >> "${TMP}" <<NGXEOF
+    include ${SSL_OPTIONS};
+NGXEOF
+  fi
+  if [[ -f "${SSL_DHPARAM}" ]]; then
+    cat >> "${TMP}" <<NGXEOF
+    ssl_dhparam ${SSL_DHPARAM};
+NGXEOF
+  fi
+
+  cat >> "${TMP}" <<NGXEOF
+
+    location / {
+        proxy_pass http://127.0.0.1:${UPSTREAM_PORT};
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+
+        # Dash can use long-lived connections; keep this conservative.
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+
+        # WebSocket headers (safe even if unused)
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+NGXEOF
+else
+  # No SSL certs found: serve the app directly on port 80.
+  cat > "${TMP}" <<NGXEOF
 server {
     listen 80;
     server_name ${DOMAIN_NAME};
@@ -53,6 +146,7 @@ server {
     }
 }
 NGXEOF
+fi
 
 # Optional redirect from an old domain to the new one (only if it's not already configured elsewhere).
 if [[ -n "${OLD_DOMAIN_NAME}" ]]; then
@@ -90,4 +184,8 @@ sudo nginx -t
 echo "Reloading nginx..."
 sudo systemctl reload nginx || sudo systemctl restart nginx
 
-echo "OK: nginx is proxying http://${DOMAIN_NAME} -> http://127.0.0.1:${UPSTREAM_PORT}"
+if [[ "${HAS_SSL}" == "true" ]]; then
+  echo "OK: nginx is proxying https://${DOMAIN_NAME} -> http://127.0.0.1:${UPSTREAM_PORT} (and redirecting http -> https)"
+else
+  echo "OK: nginx is proxying http://${DOMAIN_NAME} -> http://127.0.0.1:${UPSTREAM_PORT}"
+fi
