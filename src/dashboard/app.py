@@ -434,34 +434,31 @@ class ResulamDashboard:
                         box-shadow: 0 14px 30px rgba(0, 0, 0, 0.32);
                     }
 
-                    /* Theme toggle button: pin top-right and match hero style */
+                    /* Theme toggle button: place next to logo (no container look) */
                     #theme-toggle-btn {
-                        position: absolute;
-                        top: 18px;
-                        right: 18px;
-                        z-index: 5;
-                        width: 56px;
-                        height: 56px;
+                        position: static;
+                        z-index: 2;
+                        width: 44px;
+                        height: 44px;
                         padding: 0 !important;
-                        border-radius: 16px;
+                        border-radius: 999px;
                         display: inline-flex;
                         align-items: center;
                         justify-content: center;
-                        background: rgba(17, 24, 39, 0.38) !important;
-                        border: 1px solid rgba(255, 255, 255, 0.22) !important;
+                        background: transparent !important;
+                        border: none !important;
                         color: #f8fafc !important;
-                        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
-                        backdrop-filter: blur(10px);
-                        -webkit-backdrop-filter: blur(10px);
-                        transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+                        box-shadow: none !important;
+                        transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease, border-color 120ms ease;
                     }
                     #theme-toggle-btn:hover {
                         transform: translateY(-1px);
-                        background: rgba(17, 24, 39, 0.48) !important;
-                        box-shadow: 0 16px 34px rgba(0, 0, 0, 0.42);
+                        background: rgba(255, 255, 255, 0.08) !important;
+                        border: 1px solid rgba(255, 255, 255, 0.22) !important;
+                        box-shadow: 0 12px 26px rgba(0, 0, 0, 0.32) !important;
                     }
                     #theme-toggle-btn:focus {
-                        box-shadow: 0 0 0 0.25rem rgba(0, 221, 255, 0.22), 0 16px 34px rgba(0, 0, 0, 0.42);
+                        box-shadow: 0 0 0 0.25rem rgba(0, 221, 255, 0.22) !important;
                     }
                     #theme-icon {
                         font-size: 1.35rem;
@@ -469,11 +466,8 @@ class ResulamDashboard:
                     }
                     @media (max-width: 768px) {
                         #theme-toggle-btn {
-                            top: 14px;
-                            right: 14px;
-                            width: 48px;
-                            height: 48px;
-                            border-radius: 14px;
+                            width: 40px;
+                            height: 40px;
                         }
                         #theme-icon {
                             font-size: 1.2rem;
@@ -500,14 +494,25 @@ class ResulamDashboard:
 
                     /* Light-mode contact buttons: higher contrast + brand outline */
                     body.light-mode #theme-toggle-btn {
-                        background: rgba(255, 255, 255, 0.74) !important;
-                        border-color: rgba(33, 37, 41, 0.18) !important;
                         color: #212529 !important;
-                        box-shadow: 0 12px 22px rgba(0, 0, 0, 0.12);
+                        box-shadow: none !important;
                     }
                     body.light-mode #theme-toggle-btn:hover {
-                        background: rgba(248, 249, 250, 0.92) !important;
-                        box-shadow: 0 16px 28px rgba(0, 0, 0, 0.14);
+                        background: rgba(33, 37, 41, 0.06) !important;
+                        border: 1px solid rgba(33, 37, 41, 0.18) !important;
+                        box-shadow: 0 10px 18px rgba(0, 0, 0, 0.10) !important;
+                    }
+
+                    .header-logo-row {
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 12px;
+                    }
+                    @media (max-width: 768px) {
+                        .header-logo-row {
+                            gap: 10px;
+                        }
                     }
 
                     body.light-mode .header-social-links .contact-btn {
@@ -691,22 +696,22 @@ class ResulamDashboard:
         
         # Header
         header = dbc.Container([
-            dbc.Button(
-                html.I(className="fas fa-sun", id="theme-icon"),
-                id="theme-toggle-btn",
-                color="light",
-                outline=True,
-                size="lg",
-                title="Toggle light/dark mode",
-            ),
             dbc.Row([
                 dbc.Col([
                     html.Div([
                         html.Img(
                             src="assets/resulam_logo_egg.png",
-                            style={"height": "80px", "margin-bottom": "10px"}
+                            style={"height": "80px"}
+                        ),
+                        dbc.Button(
+                            html.I(className="fas fa-sun", id="theme-icon"),
+                            id="theme-toggle-btn",
+                            color="light",
+                            outline=True,
+                            size="lg",
+                            title="Toggle light/dark mode",
                         )
-                    ], className="text-center mb-2")
+                    ], className="header-logo-row mb-2")
                 ], width="auto", className="mx-auto")
             ], className="justify-content-center mb-2"),
             dbc.Row([
