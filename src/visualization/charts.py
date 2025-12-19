@@ -791,7 +791,12 @@ class SummaryMetrics:
         # Resulam gets the remainder
         resulam_share = total_revenue_usd - total_royalties_shared
         
-        unique_titles = df['Title'].nunique()
+        # For dashboard consistency, treat a "unique title" as a unique book nickname.
+        # This matches the Books filter which is based on `book_nick_name`.
+        if 'book_nick_name' in df.columns:
+            unique_titles = df['book_nick_name'].nunique()
+        else:
+            unique_titles = df['Title'].nunique()
         
         # Count unique authors after normalization
         # Use exploded data if available, otherwise use author combinations

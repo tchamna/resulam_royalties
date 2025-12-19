@@ -346,6 +346,35 @@ class ResulamDashboard:
                         color: #212529 !important;
                     }
 
+                    /* Category dropdown: keep selected value compact; make menu readable for long labels */
+                    #category-filter .Select-control {
+                        min-height: 38px !important;
+                    }
+                    #category-filter .Select-value-label {
+                        white-space: nowrap !important;
+                        overflow: hidden !important;
+                        text-overflow: ellipsis !important;
+                        display: block !important;
+                    }
+
+                    /* Dash dcc.Dropdown uses a virtualized menu; allow the menu to grow and/or scroll horizontally */
+                    #category-filter .Select-menu-outer {
+                        width: max-content !important;
+                        min-width: 100% !important;
+                        max-width: 90vw !important;
+                        overflow-x: auto !important;
+                    }
+                    #category-filter .Select-menu {
+                        width: max-content !important;
+                        min-width: 100% !important;
+                    }
+                    #category-filter .VirtualizedSelectOption,
+                    #category-filter .Select-option {
+                        white-space: nowrap !important;
+                        overflow: visible !important;
+                        text-overflow: clip !important;
+                    }
+
                     /* Header hero */
                     #header-container {
                         position: relative;
