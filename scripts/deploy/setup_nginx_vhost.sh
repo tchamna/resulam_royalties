@@ -63,6 +63,19 @@ if [[ ! -f "${SSL_FULLCHAIN}" || ! -f "${SSL_PRIVKEY}" ]]; then
     fi
   done
 fi
+
+# If still not found, fall back to parsing certbot renewal configs (most reliable).
+if [[ (! -f "${SSL_FULLCHAIN}" || ! -f "${SSL_PRIVKEY}") && -d /etc/letsencrypt/renewal ]]; then
+  RENEWAL_CONF="$(sudo grep -RslE "^domains\\s*=.*\\b${DOMAIN_NAME//./\\.}\\b" /etc/letsencrypt/renewal 2>/dev/null | head -n 1 || true)"
+  if [[ -n "${RENEWAL_CONF}" ]]; then
+    RENEWAL_FULLCHAIN="$(sudo awk -F' *= *' '$1==\"fullchain\" {print $2; exit}' \"${RENEWAL_CONF}\" 2>/dev/null || true)"
+    RENEWAL_PRIVKEY="$(sudo awk -F' *= *' '$1==\"privkey\" {print $2; exit}' \"${RENEWAL_CONF}\" 2>/dev/null || true)"
+    if [[ -f "${RENEWAL_FULLCHAIN}" && -f "${RENEWAL_PRIVKEY}" ]]; then
+      SSL_FULLCHAIN="${RENEWAL_FULLCHAIN}"
+      SSL_PRIVKEY="${RENEWAL_PRIVKEY}"
+    fi
+  fi
+fi
 if [[ -f "${SSL_FULLCHAIN}" && -f "${SSL_PRIVKEY}" ]]; then
   HAS_SSL="true"
 fi
