@@ -458,6 +458,14 @@ class PublicDashboard:
                         box-shadow: 0 12px 26px rgba(0, 0, 0, 0.32) !important;
                     }
                     #theme-toggle-btn:focus {
+                        /* Avoid persistent focus ring after clicking (mouse users). */
+                        box-shadow: none !important;
+                        outline: none !important;
+                        border: none !important;
+                        background: transparent !important;
+                    }
+                    #theme-toggle-btn:focus-visible {
+                        /* Keep an accessible focus indicator for keyboard users. */
                         box-shadow: 0 0 0 0.25rem rgba(0, 221, 255, 0.22) !important;
                     }
                     #theme-icon {
@@ -501,6 +509,15 @@ class PublicDashboard:
                         background: rgba(33, 37, 41, 0.06) !important;
                         border: 1px solid rgba(33, 37, 41, 0.18) !important;
                         box-shadow: 0 10px 18px rgba(0, 0, 0, 0.10) !important;
+                    }
+                    body.light-mode #theme-toggle-btn:focus {
+                        box-shadow: none !important;
+                        outline: none !important;
+                        border: none !important;
+                        background: transparent !important;
+                    }
+                    body.light-mode #theme-toggle-btn:focus-visible {
+                        box-shadow: 0 0 0 0.25rem rgba(0, 221, 255, 0.22) !important;
                     }
 
                     .header-logo-row {
