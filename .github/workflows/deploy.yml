@@ -173,17 +173,28 @@ jobs:
               echo 'No previous image found; rollback skipped.'; \
               exit 0; \
             fi; \
+            TARGET_PORT='$HOST_PORT'; \
+            if command -v nginx >/dev/null 2>&1; then \
+              P=\$(sudo nginx -T 2>/dev/null | awk -v domain='${DOMAIN_NAME_EFFECTIVE}' ' \
+                /^# configuration file / {file=\$4; sub(\":$\",\"\",file)} \
+                \$0 ~ /server_name/ && index(\$0, domain) {in_server=1} \
+                in_server && match(\$0, /proxy_pass[[:space:]]+http:\\/\\/127\\.0\\.0\\.1:([0-9]+)/, m) {print m[1]; exit} \
+                in_server && \$0 ~ /^}/ {in_server=0} \
+              ' || true); \
+              if [ -n \"\${P:-}\" ]; then TARGET_PORT=\"\$P\"; fi; \
+            fi; \
+            echo \"Rollback bind port: \$TARGET_PORT\"; \
             docker stop '$CONTAINER_NAME' 2>/dev/null || true; \
             docker rm '$CONTAINER_NAME' 2>/dev/null || true; \
             docker run -d \
               --name '$CONTAINER_NAME' \
               --restart unless-stopped \
-              -p 127.0.0.1:$HOST_PORT:$DASH_PORT \
+              -p 127.0.0.1:\$TARGET_PORT:$DASH_PORT \
               -e PUBLIC_BASE_URL='https://$DOMAIN_NAME_EFFECTIVE' \
               resulam-royalties:previous; \
             if [ -f '$APP_DIR/scripts/deploy/setup_nginx_vhost.sh' ]; then \
               echo 'Updating nginx upstream to rollback port...'; \
               chmod +x '$APP_DIR/scripts/deploy/setup_nginx_vhost.sh' || true; \
-              DOMAIN_NAME='$DOMAIN_NAME_EFFECTIVE' UPSTREAM_PORT='$HOST_PORT' bash '$APP_DIR/scripts/deploy/setup_nginx_vhost.sh' || true; \
+              DOMAIN_NAME='$DOMAIN_NAME_EFFECTIVE' UPSTREAM_PORT=\"\$TARGET_PORT\" bash '$APP_DIR/scripts/deploy/setup_nginx_vhost.sh' || true; \
             fi; \
             docker logs '$CONTAINER_NAME' --tail 50 || true"
