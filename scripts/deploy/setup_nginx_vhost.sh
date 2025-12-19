@@ -18,6 +18,8 @@ fi
 # otherwise fall back to a reasonable default location.
 EXISTING_NGINX_FILE=""
 if sudo nginx -T >/dev/null 2>&1; then
+  # nginx -T produces a lot of output; the awk exits early after finding the first match,
+  # which can cause nginx to receive SIGPIPE and return non-zero. Ignore that.
   EXISTING_NGINX_FILE="$(sudo nginx -T 2>/dev/null | awk -v domain="${DOMAIN_NAME}" '
     /^# configuration file / {
       file=$4
@@ -27,7 +29,7 @@ if sudo nginx -T >/dev/null 2>&1; then
       print file
       exit
     }
-  ')"
+  ')" || true
 fi
 
 if [[ -n "${EXISTING_NGINX_FILE}" ]]; then
@@ -52,16 +54,25 @@ SSL_PRIVKEY="${SSL_DIR}/privkey.pem"
 SSL_OPTIONS="/etc/letsencrypt/options-ssl-nginx.conf"
 SSL_DHPARAM="/etc/letsencrypt/ssl-dhparams.pem"
 HAS_SSL="false"
-if [[ ! -f "${SSL_FULLCHAIN}" || ! -f "${SSL_PRIVKEY}" ]]; then
+
+cert_exists() {
+  # /etc/letsencrypt/live is typically 0700 root:root, so checks must run as root.
+  sudo test -f "$1"
+}
+
+if ! cert_exists "${SSL_FULLCHAIN}" || ! cert_exists "${SSL_PRIVKEY}"; then
   # Certbot commonly creates suffixed directories like "<domain>-0001".
-  for d in /etc/letsencrypt/live/${DOMAIN_NAME}*; do
-    if [[ -f "${d}/fullchain.pem" && -f "${d}/privkey.pem" ]]; then
+  # IMPORTANT: glob expansion must happen as root (the live dir is not readable by ec2-user).
+  CERT_DIRS="$(sudo bash -lc "ls -d /etc/letsencrypt/live/${DOMAIN_NAME}* 2>/dev/null || true")"
+  while IFS= read -r d; do
+    [[ -z "${d}" ]] && continue
+    if cert_exists "${d}/fullchain.pem" && cert_exists "${d}/privkey.pem"; then
       SSL_DIR="${d}"
       SSL_FULLCHAIN="${SSL_DIR}/fullchain.pem"
       SSL_PRIVKEY="${SSL_DIR}/privkey.pem"
       break
     fi
-  done
+  done <<< "${CERT_DIRS}"
 fi
 
 # If still not found, fall back to parsing certbot renewal configs (most reliable).
@@ -70,13 +81,13 @@ if [[ (! -f "${SSL_FULLCHAIN}" || ! -f "${SSL_PRIVKEY}") && -d /etc/letsencrypt/
   if [[ -n "${RENEWAL_CONF}" ]]; then
     RENEWAL_FULLCHAIN="$(sudo awk -F' *= *' '$1==\"fullchain\" {print $2; exit}' \"${RENEWAL_CONF}\" 2>/dev/null || true)"
     RENEWAL_PRIVKEY="$(sudo awk -F' *= *' '$1==\"privkey\" {print $2; exit}' \"${RENEWAL_CONF}\" 2>/dev/null || true)"
-    if [[ -f "${RENEWAL_FULLCHAIN}" && -f "${RENEWAL_PRIVKEY}" ]]; then
+    if cert_exists "${RENEWAL_FULLCHAIN}" && cert_exists "${RENEWAL_PRIVKEY}"; then
       SSL_FULLCHAIN="${RENEWAL_FULLCHAIN}"
       SSL_PRIVKEY="${RENEWAL_PRIVKEY}"
     fi
   fi
 fi
-if [[ -f "${SSL_FULLCHAIN}" && -f "${SSL_PRIVKEY}" ]]; then
+if cert_exists "${SSL_FULLCHAIN}" && cert_exists "${SSL_PRIVKEY}"; then
   HAS_SSL="true"
 fi
 

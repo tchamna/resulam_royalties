@@ -161,6 +161,9 @@ jobs:
           HOST_PORT: ${{ secrets.HOST_PORT || '8050' }}
           DASH_PORT: ${{ secrets.DASH_PORT || '8050' }}
           DOMAIN_NAME: ${{ secrets.DOMAIN_NAME || 'africanlanguagelibrary.tchamna.com' }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET || 'resulam-royalties' }}
+          AWS_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
+          AUTO_SYNC_INTERVAL: ${{ secrets.AUTO_SYNC_INTERVAL || '60' }}
         run: |
           set -euo pipefail
           echo "Rollback: starting resulam-royalties:previous if available"
@@ -190,6 +193,11 @@ jobs:
               --name '$CONTAINER_NAME' \
               --restart unless-stopped \
               -p 127.0.0.1:\$TARGET_PORT:$DASH_PORT \
+              -v ~/.aws:/root/.aws:ro \
+              -e USE_S3_DATA='true' \
+              -e S3_BUCKET='$S3_BUCKET' \
+              -e AWS_DEFAULT_REGION='$AWS_REGION' \
+              -e AUTO_SYNC_INTERVAL='$AUTO_SYNC_INTERVAL' \
               -e PUBLIC_BASE_URL='https://$DOMAIN_NAME_EFFECTIVE' \
               resulam-royalties:previous; \
             if [ -f '$APP_DIR/scripts/deploy/setup_nginx_vhost.sh' ]; then \
