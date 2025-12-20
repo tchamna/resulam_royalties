@@ -43,7 +43,7 @@ jobs:
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
-          APP_DIR: ${{ secrets.APP_DIR || '/home/ec2-user/apps/resulam-royalties' }}
+          APP_DIR: ${{ secrets.APP_DIR || '/home/ec2-user/apps/resulam_royalties' }}
           S3_BUCKET: ${{ secrets.S3_BUCKET || 'resulam-royalties' }}
           AWS_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
           CONTAINER_NAME: ${{ secrets.CONTAINER_NAME || 'resulam-royalties' }}
@@ -66,7 +66,15 @@ jobs:
           echo "Domain (effective): $DOMAIN_NAME_EFFECTIVE"
 
           ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no "$EC2_USER@$EC2_HOST" "set -euo pipefail; \
-            cd '$APP_DIR'; \
+            cd '$APP_DIR' || { mkdir -p '$APP_DIR'; cd '$APP_DIR'; }; \
+            if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
+              git init; \
+            fi; \
+            if git remote get-url origin >/dev/null 2>&1; then \
+              git remote set-url origin 'https://github.com/${{ github.repository }}.git'; \
+            else \
+              git remote add origin 'https://github.com/${{ github.repository }}.git'; \
+            fi; \
             rm -f royalties_exploded_2024.csv royalties_per_author_2024.csv royalties_resulambooks_from_2015_2024_history_df.csv || true; \
             git fetch origin main; \
             git reset --hard origin/main; \
@@ -93,7 +101,7 @@ jobs:
           EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
           CONTAINER_NAME: ${{ secrets.CONTAINER_NAME || 'resulam-royalties' }}
           HOST_PORT: ${{ secrets.HOST_PORT || '8050' }}
-          APP_DIR: ${{ secrets.APP_DIR || '/home/ec2-user/apps/resulam-royalties' }}
+          APP_DIR: ${{ secrets.APP_DIR || '/home/ec2-user/apps/resulam_royalties' }}
         run: |
           set -euo pipefail
           echo "Checking container status and logs..."
@@ -117,7 +125,7 @@ jobs:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
           HOST_PORT: ${{ secrets.HOST_PORT || '8050' }}
-          APP_DIR: ${{ secrets.APP_DIR || '/home/ec2-user/apps/resulam-royalties' }}
+          APP_DIR: ${{ secrets.APP_DIR || '/home/ec2-user/apps/resulam_royalties' }}
         run: |
           set -euo pipefail
           echo "Verifying application health..."
@@ -156,7 +164,7 @@ jobs:
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
-          APP_DIR: ${{ secrets.APP_DIR || '/home/ec2-user/apps/resulam-royalties' }}
+          APP_DIR: ${{ secrets.APP_DIR || '/home/ec2-user/apps/resulam_royalties' }}
           CONTAINER_NAME: ${{ secrets.CONTAINER_NAME || 'resulam-royalties' }}
           HOST_PORT: ${{ secrets.HOST_PORT || '8050' }}
           DASH_PORT: ${{ secrets.DASH_PORT || '8050' }}
