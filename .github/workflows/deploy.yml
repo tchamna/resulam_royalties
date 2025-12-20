@@ -65,7 +65,7 @@ jobs:
           fi
           echo "Domain (effective): $DOMAIN_NAME_EFFECTIVE"
 
-          ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no "$EC2_USER@$EC2_HOST" "set -euo pipefail; \
+          ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "$EC2_USER@$EC2_HOST" "set -euo pipefail; \
             cd '$APP_DIR' || { mkdir -p '$APP_DIR'; cd '$APP_DIR'; }; \
             if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
               git init; \
@@ -105,7 +105,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "Checking container status and logs..."
-          ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no "$EC2_USER@$EC2_HOST" "\
+          ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "$EC2_USER@$EC2_HOST" "\
             UPSTREAM_PORT=\$(cat '$APP_DIR/.deploy_state/host_port' 2>/dev/null || echo '$HOST_PORT'); \
             echo '=== Docker Container Status ==='; \
             docker ps -a | grep -F '$CONTAINER_NAME' || echo 'Container not found'; \
@@ -135,7 +135,7 @@ jobs:
               echo "OK: https://$DOMAIN_NAME"
               exit 0
             fi
-            if ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no "$EC2_USER@$EC2_HOST" "UP=\$(cat '$APP_DIR/.deploy_state/host_port' 2>/dev/null || echo '$HOST_PORT'); curl -sf http://127.0.0.1:\$UP/ >/dev/null 2>&1 && curl -sf http://127.0.0.1:\$UP/authors/ >/dev/null 2>&1"; then
+            if ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "$EC2_USER@$EC2_HOST" "UP=\$(cat '$APP_DIR/.deploy_state/host_port' 2>/dev/null || echo '$HOST_PORT'); curl -sf http://127.0.0.1:\$UP/ >/dev/null 2>&1 && curl -sf http://127.0.0.1:\$UP/authors/ >/dev/null 2>&1"; then
               echo "OK: container is responding on localhost (upstream port from state file)"
               exit 0
             fi
@@ -179,7 +179,7 @@ jobs:
           if [[ "$DOMAIN_NAME_EFFECTIVE" == "resulam-royalties.tchamna.com" ]]; then
             DOMAIN_NAME_EFFECTIVE="africanlanguagelibrary.tchamna.com"
           fi
-          ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no "$EC2_USER@$EC2_HOST" "set -euo pipefail; \
+          ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "$EC2_USER@$EC2_HOST" "set -euo pipefail; \
             if ! docker image inspect resulam-royalties:previous >/dev/null 2>&1; then \
               echo 'No previous image found; rollback skipped.'; \
               exit 0; \
