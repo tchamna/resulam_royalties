@@ -8,6 +8,7 @@ from typing import Dict
 from pathlib import Path
 import pandas as pd
 import math
+import re
 import unicodedata
 import plotly.graph_objects as go
 
@@ -2738,6 +2739,16 @@ class PublicDashboard:
                     ], className="shadow-sm mb-4")
                 ])
             ]),
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader(html.H5(f"Top 20 Books by Net Units Sold{context}")),
+                        dbc.CardBody([
+                            self._create_top_books_table(data, limit=20)
+                        ])
+                    ], className="shadow-sm mb-4")
+                ])
+            ]),
             # eBook vs Physical Books Analysis section
             dbc.Row([
                 dbc.Col([
@@ -2761,6 +2772,120 @@ class PublicDashboard:
             ])
         ], fluid=True)
     
+    def _create_top_books_table(self, data, limit: int = 20):
+        """Create a table of top books by units sold."""
+        if len(data) == 0 or 'book_nick_name' not in data.columns or 'Net Units Sold' not in data.columns:
+            return html.P("No data available")
+
+        units_by_book = (
+            data.groupby('book_nick_name')['Net Units Sold']
+            .sum()
+            .sort_values(ascending=False)
+            .head(limit)
+        )
+
+        title_map = {}
+        date_map = {}
+        try:
+            books_df = pd.read_csv(BOOKS_DATABASE_PATH)
+            if 'book_nick_name' in books_df.columns and 'title' in books_df.columns:
+                title_map = books_df.set_index('book_nick_name')['title'].to_dict()
+            if 'book_nick_name' in books_df.columns and 'publication_date' in books_df.columns:
+                date_map = books_df.set_index('book_nick_name')['publication_date'].to_dict()
+        except Exception as e:
+            print(f"Warning: Could not load books database for table: {e}")
+
+        royalty_to_db = {}
+        try:
+            from src.hardcoded_nicknames import DB_NICKNAME_TO_ROYALTY
+            for db_nick, royalty_nicks in DB_NICKNAME_TO_ROYALTY.items():
+                for royalty_nick in royalty_nicks:
+                    royalty_to_db[royalty_nick] = db_nick
+        except Exception:
+            pass
+
+        def _strip_date_suffix(text: str) -> str:
+            if not text:
+                return text
+            pattern = (
+                r"\s*(?:\u2013|\u2014|-)\s*"
+                r"(January|February|March|April|May|June|July|August|September|October|November|December)"
+                r"\s+\d{1,2},\s+\d{4}\.?\s*$"
+            )
+            match = re.search(pattern, text)
+            if match:
+                return text[: match.start()].rstrip()
+            return text
+
+        def clean_title(raw_title: str) -> str:
+            if not raw_title:
+                return "Unknown"
+            text = _strip_date_suffix(str(raw_title).strip())
+            if ":" in text:
+                parts = [part.strip() for part in text.split(":") if part.strip()]
+                if len(parts) >= 2 and "-" in parts[1] and " " not in parts[1]:
+                    language = parts[1].split("-", 1)[0].strip()
+                    if language:
+                        return f"{parts[0]} - {language}"
+                return parts[0]
+            return text
+
+        def format_pub_date(raw_date: str) -> str:
+            if not raw_date:
+                return ""
+            date_value = pd.to_datetime(raw_date, errors="coerce")
+            if pd.isna(date_value):
+                return str(raw_date).strip()
+            return date_value.strftime("%B %d, %Y")
+
+        def extract_date_from_title(raw_title: str) -> str:
+            if not raw_title:
+                return ""
+            text = str(raw_title)
+            pattern = (
+                r"(?:\u2013|\u2014|-)\s*"
+                r"(?P<date>(January|February|March|April|May|June|July|August|September|October|November|December)"
+                r"\s+\d{1,2},\s+\d{4})"
+            )
+            match = re.search(pattern, text)
+            if match:
+                return match.group("date").strip()
+            return ""
+
+        rows = []
+        for rank, (nickname, units) in enumerate(units_by_book.items(), start=1):
+            db_nick = royalty_to_db.get(nickname, nickname)
+            raw_title = title_map.get(db_nick, nickname)
+            title = clean_title(raw_title)
+            pub_date = format_pub_date(date_map.get(db_nick, ""))
+            if not pub_date:
+                pub_date = extract_date_from_title(raw_title)
+            rows.append(
+                html.Tr([
+                    html.Td(rank),
+                    html.Td(title),
+                    html.Td(pub_date if pub_date else "Unknown"),
+                    html.Td(f"{int(units):,}")
+                ])
+            )
+
+        return dbc.Table(
+            [
+                html.Thead(html.Tr([
+                    html.Th("Rank"),
+                    html.Th("Title"),
+                    html.Th("Publication Date"),
+                    html.Th("Net Units Sold"),
+                ])),
+                html.Tbody(rows),
+            ],
+            striped=True,
+            hover=True,
+            responsive=True,
+            size="sm",
+            className="mb-0",
+        )
+
     def _create_format_stats_table(self, data):
         """Create statistics table for eBook vs Physical"""
         if len(data) == 0 or 'BookType' not in data.columns:

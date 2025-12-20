@@ -70,7 +70,7 @@ HARDCODED_TITLE_NICKNAMES = {
     "La fourmi affamée : Wolof-Français: Melentaan wu xiif": "wolof_fourmi_affamée",
     "La fourmi affamée : Yemba-Français: Nzií sī nzāŋà kīkyā": "yemba_fourmi_affamée",
     "La fourmi affamée : Ŋgə̂mbà – Français: Tə́ttá pfʉ́ njjikhwu'ú": "ngemba_fourmi_affamée",
-    "La grammaire des langues bamilekes : cas du nufi": "nufi_grammaire_v1",
+    "La grammaire des langues bamilekes : cas du nufi": "nufi_grammaire_bamileke",
     "Le Grenier du Ghomala: Ntɛ̂ GhɔmáláꞋ, GhɔmáláꞋ Attic ": "ghomala_attic",
     "Le Grenier du Hausa : Hausa Attic": "hausa_attic",
     "Le Grenier du Medumba: Ntà Mə̀dʉ̂mbὰ, Mə̀dʉ̂mbὰ Attic  ": "medumba_attic",
@@ -150,6 +150,7 @@ DB_NICKNAME_TO_ROYALTY = {
     "english-french_african_tales_bamiléké_fairy_tales": ["english-french_african_tales"],
     "english-french_bamilekes_fairy_work_value": ["english-french_bamilekes_fairy_tales"],
     "nufi_contes_africains_contes_bamilekés_hard_cover": ["nufi_contes_bamilekés_couleur", "nufi_contes_bamilekés_black_white", "nufi_contes_bamilekés_RETIRED"],
+    "medumba_contes_bamilekés": ["medumba_contes_bamilekés", "medumba_contes_bamilekés_couleur", "medumba_contes_bamilekés_black_white"],
     "nufi_travaille_paresse": ["nufi_conte_travaille_paresse"],
     "medumba_travaille_paresse": ["medumba_conte_travaille_paresse"],
     "yemba_travaille_paresse": ["yemba_conte_travaille_paresse"],
@@ -160,6 +161,9 @@ DB_NICKNAME_TO_ROYALTY = {
     
     # Comparative study
     "bamileke_étude_comparative_mulb": ["bamileke_étude_comparative"],
+
+    # Grammar
+    "nufi_grammaire": ["nufi_grammaire", "nufi_grammaire_v1", "nufi_grammaire_bamileke"],
     
     # Names
     "mon_prénom_africain_mon_prénom_bamiléké": ["prénom_africain_bamiléké"],
