@@ -53,6 +53,7 @@ jobs:
           OLD_DOMAIN_NAME: ${{ secrets.OLD_DOMAIN_NAME || 'resulam-royalties.tchamna.com' }}
           CONFIGURE_NGINX: ${{ secrets.CONFIGURE_NGINX || 'true' }}
           ZERO_DOWNTIME: ${{ secrets.ZERO_DOWNTIME || 'true' }}
+          KEEP_NEXT_CONTAINER_ON_FAILURE: ${{ secrets.KEEP_NEXT_CONTAINER_ON_FAILURE || 'true' }}
         run: |
           set -euo pipefail
           echo "Deploying to EC2..."
@@ -91,6 +92,7 @@ jobs:
             OLD_DOMAIN_NAME='$OLD_DOMAIN_NAME_EFFECTIVE' \
             CONFIGURE_NGINX='$CONFIGURE_NGINX' \
             ZERO_DOWNTIME='$ZERO_DOWNTIME' \
+            KEEP_NEXT_CONTAINER_ON_FAILURE='$KEEP_NEXT_CONTAINER_ON_FAILURE' \
             PUBLIC_BASE_URL='https://$DOMAIN_NAME_EFFECTIVE' \
             bash scripts/deploy/deploy_docker_remote.sh"
 
