@@ -14,6 +14,7 @@ DOMAIN_NAME="${DOMAIN_NAME:-}"
 OLD_DOMAIN_NAME="${OLD_DOMAIN_NAME:-}"
 ZERO_DOWNTIME="${ZERO_DOWNTIME:-true}"
 STARTUP_TIMEOUT_SECONDS="${STARTUP_TIMEOUT_SECONDS:-600}"
+KEEP_NEXT_CONTAINER_ON_FAILURE="${KEEP_NEXT_CONTAINER_ON_FAILURE:-false}"
 
 PORT_RANGE_START="${PORT_RANGE_START:-8050}"
 PORT_RANGE_END="${PORT_RANGE_END:-8099}"
@@ -164,8 +165,13 @@ docker build -t resulam-royalties:latest .
 
 if [[ "${ZERO_DOWNTIME}" == "true" ]]; then
   NEXT_CONTAINER_NAME="${CONTAINER_NAME}--next"
+  DEPLOY_FAILED="false"
   docker rm -f "${NEXT_CONTAINER_NAME}" 2>/dev/null || true
   cleanup_next() {
+    if [[ "${KEEP_NEXT_CONTAINER_ON_FAILURE}" == "true" && "${DEPLOY_FAILED}" == "true" ]]; then
+      echo "Keeping failed container ${NEXT_CONTAINER_NAME} for debugging."
+      return 0
+    fi
     docker rm -f "${NEXT_CONTAINER_NAME}" 2>/dev/null || true
   }
   trap cleanup_next EXIT
@@ -189,6 +195,7 @@ if [[ "${ZERO_DOWNTIME}" == "true" ]]; then
     echo "OK: next container is running: ${NEXT_CONTAINER_NAME}"
   else
     echo "ERROR: next container failed to start: ${NEXT_CONTAINER_NAME}"
+    DEPLOY_FAILED="true"
     docker logs "${NEXT_CONTAINER_NAME}" || true
     docker ps -a | grep -F "${NEXT_CONTAINER_NAME}" || true
     exit 1
@@ -197,6 +204,9 @@ if [[ "${ZERO_DOWNTIME}" == "true" ]]; then
   if ! wait_for_http_ready "${HOST_PORT}" "${STARTUP_TIMEOUT_SECONDS}"; then
     echo "ERROR: next container did not become ready; keeping existing deployment unchanged."
     echo "Last 200 lines of logs from ${NEXT_CONTAINER_NAME}:"
+    DEPLOY_FAILED="true"
+    docker ps -a | grep -F "${NEXT_CONTAINER_NAME}" || true
+    docker inspect --format='{{.State.Status}} (exit={{.State.ExitCode}})' "${NEXT_CONTAINER_NAME}" 2>/dev/null || true
     docker logs "${NEXT_CONTAINER_NAME}" --tail 200 || true
     exit 1
   fi
