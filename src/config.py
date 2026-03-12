@@ -28,23 +28,26 @@ LOCAL_ROYALTIES_HISTORY_PATH = Path(MAIN_DIR) / f"KDP_OrdersResulamBookSales2015
 DATA_DIR_LOCAL = PROJECT_ROOT / "data"
 EC2_BOOKS_DATABASE_PATH = DATA_DIR_LOCAL / "Resulam_books_database_Amazon_base_de_donnee_livres.csv"
 EC2_ROYALTIES_HISTORY_PATH = DATA_DIR_LOCAL / f"KDP_OrdersResulamBookSales2015_{CURRENT_YEAR}RoyaltiesReportsHistory.xlsx"
+EC2_ROYALTIES_HISTORY_PATH_FALLBACK = DATA_DIR_LOCAL / f"KDP_OrdersResulamBookSales2015_{LAST_YEAR}RoyaltiesReportsHistory.xlsx"
 
 # Determine which paths to use - prioritize S3-downloaded files, fallback to local
 def _get_data_paths():
     """Resolve data paths based on environment and file availability."""
-    # Check if we're on EC2 with S3 data
+    def _best_royalties(primary, fallback):
+        if primary.exists():
+            return primary
+        if fallback.exists():
+            print(f"WARNING: {primary.name} not found, using {fallback.name}")
+            return fallback
+        return primary
     if _USE_S3:
-        # On EC2, always use the downloaded S3 paths (they should exist after deployment)
-        return EC2_BOOKS_DATABASE_PATH, EC2_ROYALTIES_HISTORY_PATH
+        return EC2_BOOKS_DATABASE_PATH, _best_royalties(EC2_ROYALTIES_HISTORY_PATH, EC2_ROYALTIES_HISTORY_PATH_FALLBACK)
     else:
-        # Local development - prefer Google Drive paths, but gracefully fall back
-        # to the local `data/` folder when Drive isn't available.
-        if LOCAL_BOOKS_DATABASE_PATH.exists() and LOCAL_ROYALTIES_HISTORY_PATH.exists():
-            return LOCAL_BOOKS_DATABASE_PATH, LOCAL_ROYALTIES_HISTORY_PATH
-        if EC2_BOOKS_DATABASE_PATH.exists() and EC2_ROYALTIES_HISTORY_PATH.exists():
-            return EC2_BOOKS_DATABASE_PATH, EC2_ROYALTIES_HISTORY_PATH
-        # Default to the Drive paths so the "Missing required files" message
-        # points at the intended local dev location.
+        local_fallback = Path(MAIN_DIR) / f"KDP_OrdersResulamBookSales2015_{LAST_YEAR}RoyaltiesReportsHistory.xlsx"
+        if LOCAL_BOOKS_DATABASE_PATH.exists():
+            return LOCAL_BOOKS_DATABASE_PATH, _best_royalties(LOCAL_ROYALTIES_HISTORY_PATH, local_fallback)
+        if EC2_BOOKS_DATABASE_PATH.exists():
+            return EC2_BOOKS_DATABASE_PATH, _best_royalties(EC2_ROYALTIES_HISTORY_PATH, EC2_ROYALTIES_HISTORY_PATH_FALLBACK)
         return LOCAL_BOOKS_DATABASE_PATH, LOCAL_ROYALTIES_HISTORY_PATH
 
 BOOKS_DATABASE_PATH, ROYALTIES_HISTORY_PATH = _get_data_paths()

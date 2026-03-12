@@ -166,3 +166,4 @@ analyze_*.py
 find_*.py
 list_*.py
 verify_*.py
+src/config.py.bak
