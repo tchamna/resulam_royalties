@@ -36,17 +36,36 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
 
-      - name: Create SSH key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2-key.pem
-          chmod 600 ~/.ssh/ec2-key.pem
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
-
-      - name: Deploy to EC2 using Docker
+      - name: Resolve EC2 instance for SSM
+        id: ec2
         env:
+          EC2_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
           EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
+        run: |
+          set -euo pipefail
+          if [ -n "${EC2_INSTANCE_ID}" ]; then
+            echo "instance_id=${EC2_INSTANCE_ID}" >> "$GITHUB_OUTPUT"
+            echo "Using EC2_INSTANCE_ID secret: ${EC2_INSTANCE_ID}"
+            exit 0
+          fi
+          if [ -z "${EC2_HOST}" ]; then
+            echo "ERROR: Set EC2_INSTANCE_ID or EC2_HOST GitHub secret" >&2
+            exit 1
+          fi
+          INSTANCE_ID="$(aws ec2 describe-instances \
+            --filters "Name=instance-state-name,Values=running" "Name=ip-address,Values=${EC2_HOST}" \
+            --query 'Reservations[0].Instances[0].InstanceId' \
+            --output text)"
+          if [ -z "${INSTANCE_ID}" ] || [ "${INSTANCE_ID}" = "None" ]; then
+            echo "ERROR: No running instance found for EC2_HOST=${EC2_HOST}" >&2
+            exit 1
+          fi
+          echo "instance_id=${INSTANCE_ID}" >> "$GITHUB_OUTPUT"
+          echo "Resolved instance ${INSTANCE_ID} from EC2_HOST=${EC2_HOST}"
+
+      - name: Deploy to EC2 using Docker (SSM)
+        env:
+          EC2_INSTANCE_ID: ${{ steps.ec2.outputs.instance_id }}
           APP_DIR: ${{ secrets.APP_DIR || '/home/ec2-user/apps/resulam_royalties' }}
           S3_BUCKET: ${{ secrets.S3_BUCKET || 'resulam-royalties' }}
           AWS_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
@@ -60,7 +79,8 @@ jobs:
           KEEP_NEXT_CONTAINER_ON_FAILURE: ${{ secrets.KEEP_NEXT_CONTAINER_ON_FAILURE || 'true' }}
         run: |
           set -euo pipefail
-          echo "Deploying to EC2..."
+          chmod +x scripts/deploy/ci_ssm_run.sh
+          echo "Deploying via SSM to ${EC2_INSTANCE_ID}..."
 
           DOMAIN_NAME_EFFECTIVE="$DOMAIN_NAME"
           OLD_DOMAIN_NAME_EFFECTIVE="$OLD_DOMAIN_NAME"
@@ -70,70 +90,79 @@ jobs:
           fi
           echo "Domain (effective): $DOMAIN_NAME_EFFECTIVE"
 
-          ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "$EC2_USER@$EC2_HOST" "set -euo pipefail; \
-            cd '$APP_DIR' || { mkdir -p '$APP_DIR'; cd '$APP_DIR'; }; \
-            if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
-              git init; \
-            fi; \
-            if git remote get-url origin >/dev/null 2>&1; then \
-              git remote set-url origin 'https://github.com/${{ github.repository }}.git'; \
-            else \
-              git remote add origin 'https://github.com/${{ github.repository }}.git'; \
-            fi; \
-            rm -f royalties_exploded_2024.csv royalties_per_author_2024.csv royalties_resulambooks_from_2015_2024_history_df.csv || true; \
-            git fetch origin main; \
-            git reset --hard origin/main; \
-            git clean -fd -e .deploy_state || true; \
-            chmod +x scripts/deploy/deploy_docker_remote.sh scripts/deploy/setup_nginx_vhost.sh || true; \
-            AWS_ACCESS_KEY_ID='${{ secrets.AWS_ACCESS_KEY_ID }}' \
-            AWS_SECRET_ACCESS_KEY='${{ secrets.AWS_SECRET_ACCESS_KEY }}' \
-            AWS_REGION='$AWS_REGION' \
-            S3_BUCKET='$S3_BUCKET' \
-            CONTAINER_NAME='$CONTAINER_NAME' \
-            HOST_PORT='$HOST_PORT' \
-            DASH_PORT='$DASH_PORT' \
-            DOMAIN_NAME='$DOMAIN_NAME_EFFECTIVE' \
-            OLD_DOMAIN_NAME='$OLD_DOMAIN_NAME_EFFECTIVE' \
-            CONFIGURE_NGINX='$CONFIGURE_NGINX' \
-            ZERO_DOWNTIME='$ZERO_DOWNTIME' \
-            KEEP_NEXT_CONTAINER_ON_FAILURE='$KEEP_NEXT_CONTAINER_ON_FAILURE' \
-            PUBLIC_BASE_URL='https://$DOMAIN_NAME_EFFECTIVE' \
-            bash scripts/deploy/deploy_docker_remote.sh"
+          REMOTE_SCRIPT=$(cat <<REMOTE_BODY
+set -euo pipefail
+cd '${APP_DIR}' || { mkdir -p '${APP_DIR}'; cd '${APP_DIR}'; }
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git init
+fi
+if git remote get-url origin >/dev/null 2>&1; then
+  git remote set-url origin 'https://github.com/${{ github.repository }}.git'
+else
+  git remote add origin 'https://github.com/${{ github.repository }}.git'
+fi
+rm -f royalties_exploded_2024.csv royalties_per_author_2024.csv royalties_resulambooks_from_2015_2024_history_df.csv || true
+git fetch origin main
+git reset --hard origin/main
+git clean -fd -e .deploy_state || true
+chmod +x scripts/deploy/deploy_docker_remote.sh scripts/deploy/setup_nginx_vhost.sh || true
+AWS_ACCESS_KEY_ID='${{ secrets.AWS_ACCESS_KEY_ID }}' \
+AWS_SECRET_ACCESS_KEY='${{ secrets.AWS_SECRET_ACCESS_KEY }}' \
+AWS_REGION='${AWS_REGION}' \
+S3_BUCKET='${S3_BUCKET}' \
+CONTAINER_NAME='${CONTAINER_NAME}' \
+HOST_PORT='${HOST_PORT}' \
+DASH_PORT='${DASH_PORT}' \
+DOMAIN_NAME='${DOMAIN_NAME_EFFECTIVE}' \
+OLD_DOMAIN_NAME='${OLD_DOMAIN_NAME_EFFECTIVE}' \
+CONFIGURE_NGINX='${CONFIGURE_NGINX}' \
+ZERO_DOWNTIME='${ZERO_DOWNTIME}' \
+KEEP_NEXT_CONTAINER_ON_FAILURE='${KEEP_NEXT_CONTAINER_ON_FAILURE}' \
+PUBLIC_BASE_URL='https://${DOMAIN_NAME_EFFECTIVE}' \
+bash scripts/deploy/deploy_docker_remote.sh
+REMOTE_BODY
+)
+
+          printf '%s\n' "$REMOTE_SCRIPT" | bash scripts/deploy/ci_ssm_run.sh "$EC2_INSTANCE_ID" "deploy"
 
       - name: Check application logs
         if: always()
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
+          EC2_INSTANCE_ID: ${{ steps.ec2.outputs.instance_id }}
           CONTAINER_NAME: ${{ secrets.CONTAINER_NAME || 'resulam-royalties' }}
           HOST_PORT: ${{ secrets.HOST_PORT || '8050' }}
           APP_DIR: ${{ secrets.APP_DIR || '/home/ec2-user/apps/resulam_royalties' }}
         run: |
           set -euo pipefail
-          echo "Checking container status and logs..."
-          ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "$EC2_USER@$EC2_HOST" "\
-            UPSTREAM_PORT=\$(cat '$APP_DIR/.deploy_state/host_port' 2>/dev/null || echo '$HOST_PORT'); \
-            echo '=== Docker Container Status ==='; \
-            docker ps -a | grep -F '$CONTAINER_NAME' || echo 'Container not found'; \
-            echo ''; \
-            echo '=== Last 30 lines of container log ==='; \
-            docker logs '$CONTAINER_NAME' --tail 30 2>&1 || true; \
-            echo ''; \
-            echo '=== Container health status ==='; \
-            docker inspect --format='{{.State.Health.Status}}' '$CONTAINER_NAME' 2>/dev/null || echo 'Health check not available'; \
-            echo ''; \
-            echo '=== Checking if port '\$UPSTREAM_PORT' is listening ==='; \
-            sudo netstat -tlnp | grep ':\'\$UPSTREAM_PORT' ' || echo 'Port '\$UPSTREAM_PORT' not listening'"
+          chmod +x scripts/deploy/ci_ssm_run.sh
+          echo "Checking container status and logs via SSM..."
+          REMOTE_SCRIPT=$(cat <<REMOTE_EOF
+          set -euo pipefail
+          UPSTREAM_PORT=\$(cat '${APP_DIR}/.deploy_state/host_port' 2>/dev/null || echo '${HOST_PORT}')
+          echo '=== Docker Container Status ==='
+          docker ps -a | grep -F '${CONTAINER_NAME}' || echo 'Container not found'
+          echo ''
+          echo '=== Last 30 lines of container log ==='
+          docker logs '${CONTAINER_NAME}' --tail 30 2>&1 || true
+          echo ''
+          echo '=== Container health status ==='
+          docker inspect --format='{{.State.Health.Status}}' '${CONTAINER_NAME}' 2>/dev/null || echo 'Health check not available'
+          echo ''
+          echo "=== Checking if port \${UPSTREAM_PORT} is listening ==="
+          sudo netstat -tlnp | grep ":\${UPSTREAM_PORT} " || echo "Port \${UPSTREAM_PORT} not listening"
+          REMOTE_EOF
+          )
+          printf '%s\n' "$REMOTE_SCRIPT" | bash scripts/deploy/ci_ssm_run.sh "$EC2_INSTANCE_ID" "check-logs" || true
 
       - name: Verify deployment
         env:
           DOMAIN_NAME: ${{ secrets.DOMAIN_NAME || 'africanlanguagelibrary.tchamna.com' }}
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
+          EC2_INSTANCE_ID: ${{ steps.ec2.outputs.instance_id }}
           HOST_PORT: ${{ secrets.HOST_PORT || '8050' }}
           APP_DIR: ${{ secrets.APP_DIR || '/home/ec2-user/apps/resulam_royalties' }}
         run: |
           set -euo pipefail
+          chmod +x scripts/deploy/ci_ssm_run.sh
           echo "Verifying application health..."
           max_attempts=12
           for i in $(seq 1 $max_attempts); do
@@ -141,7 +170,13 @@ jobs:
               echo "OK: https://$DOMAIN_NAME"
               exit 0
             fi
-            if ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "$EC2_USER@$EC2_HOST" "UP=\$(cat '$APP_DIR/.deploy_state/host_port' 2>/dev/null || echo '$HOST_PORT'); curl -sf http://127.0.0.1:\$UP/ >/dev/null 2>&1 && curl -sf http://127.0.0.1:\$UP/authors/ >/dev/null 2>&1"; then
+            REMOTE_SCRIPT=$(cat <<REMOTE_EOF
+          set -euo pipefail
+          UP=\$(cat '${APP_DIR}/.deploy_state/host_port' 2>/dev/null || echo '${HOST_PORT}')
+          curl -sf "http://127.0.0.1:\${UP}/" >/dev/null 2>&1 && curl -sf "http://127.0.0.1:\${UP}/authors/" >/dev/null 2>&1
+          REMOTE_EOF
+          )
+            if printf '%s\n' "$REMOTE_SCRIPT" | bash scripts/deploy/ci_ssm_run.sh "$EC2_INSTANCE_ID" "verify-local"; then
               echo "OK: container is responding on localhost (upstream port from state file)"
               exit 0
             fi
@@ -159,17 +194,40 @@ jobs:
       contents: read
 
     steps:
-      - name: Create SSH key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2-key.pem
-          chmod 600 ~/.ssh/ec2-key.pem
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Rollback (docker)
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
+
+      - name: Resolve EC2 instance for SSM
+        id: ec2
         env:
+          EC2_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
           EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
+        run: |
+          set -euo pipefail
+          if [ -n "${EC2_INSTANCE_ID}" ]; then
+            echo "instance_id=${EC2_INSTANCE_ID}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          INSTANCE_ID="$(aws ec2 describe-instances \
+            --filters "Name=instance-state-name,Values=running" "Name=ip-address,Values=${EC2_HOST}" \
+            --query 'Reservations[0].Instances[0].InstanceId' \
+            --output text)"
+          if [ -z "${INSTANCE_ID}" ] || [ "${INSTANCE_ID}" = "None" ]; then
+            echo "ERROR: Could not resolve EC2 instance for rollback" >&2
+            exit 1
+          fi
+          echo "instance_id=${INSTANCE_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Rollback (docker via SSM)
+        env:
+          EC2_INSTANCE_ID: ${{ steps.ec2.outputs.instance_id }}
           APP_DIR: ${{ secrets.APP_DIR || '/home/ec2-user/apps/resulam_royalties' }}
           CONTAINER_NAME: ${{ secrets.CONTAINER_NAME || 'resulam-royalties' }}
           HOST_PORT: ${{ secrets.HOST_PORT || '8050' }}
@@ -180,43 +238,48 @@ jobs:
           AUTO_SYNC_INTERVAL: ${{ secrets.AUTO_SYNC_INTERVAL || '60' }}
         run: |
           set -euo pipefail
-          echo "Rollback: starting resulam-royalties:previous if available"
+          chmod +x scripts/deploy/ci_ssm_run.sh
+          echo "Rollback via SSM: starting ${CONTAINER_NAME}:previous if available"
           DOMAIN_NAME_EFFECTIVE="$DOMAIN_NAME"
           if [[ "$DOMAIN_NAME_EFFECTIVE" == "resulam-royalties.tchamna.com" ]]; then
             DOMAIN_NAME_EFFECTIVE="africanlanguagelibrary.tchamna.com"
           fi
-          ssh -i ~/.ssh/ec2-key.pem -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "$EC2_USER@$EC2_HOST" "set -euo pipefail; \
-            if ! docker image inspect resulam-royalties:previous >/dev/null 2>&1; then \
-              echo 'No previous image found; rollback skipped.'; \
-              exit 0; \
-            fi; \
-            TARGET_PORT='$HOST_PORT'; \
-            if command -v nginx >/dev/null 2>&1; then \
-              P=\$(sudo nginx -T 2>/dev/null | awk -v domain='${DOMAIN_NAME_EFFECTIVE}' ' \
-                /^# configuration file / {file=\$4; sub(\":$\",\"\",file)} \
-                \$0 ~ /server_name/ && index(\$0, domain) {in_server=1} \
-                in_server && match(\$0, /proxy_pass[[:space:]]+http:\\/\\/127\\.0\\.0\\.1:([0-9]+)/, m) {print m[1]; exit} \
-                in_server && \$0 ~ /^}/ {in_server=0} \
-              ' || true); \
-              if [ -n \"\${P:-}\" ]; then TARGET_PORT=\"\$P\"; fi; \
-            fi; \
-            echo \"Rollback bind port: \$TARGET_PORT\"; \
-            docker stop '$CONTAINER_NAME' 2>/dev/null || true; \
-            docker rm '$CONTAINER_NAME' 2>/dev/null || true; \
-            docker run -d \
-              --name '$CONTAINER_NAME' \
-              --restart unless-stopped \
-              -p 127.0.0.1:\$TARGET_PORT:$DASH_PORT \
-              -v ~/.aws:/root/.aws:ro \
-              -e USE_S3_DATA='true' \
-              -e S3_BUCKET='$S3_BUCKET' \
-              -e AWS_DEFAULT_REGION='$AWS_REGION' \
-              -e AUTO_SYNC_INTERVAL='$AUTO_SYNC_INTERVAL' \
-              -e PUBLIC_BASE_URL='https://$DOMAIN_NAME_EFFECTIVE' \
-              resulam-royalties:previous; \
-            if [ -f '$APP_DIR/scripts/deploy/setup_nginx_vhost.sh' ]; then \
-              echo 'Updating nginx upstream to rollback port...'; \
-              chmod +x '$APP_DIR/scripts/deploy/setup_nginx_vhost.sh' || true; \
-              DOMAIN_NAME='$DOMAIN_NAME_EFFECTIVE' UPSTREAM_PORT=\"\$TARGET_PORT\" bash '$APP_DIR/scripts/deploy/setup_nginx_vhost.sh' || true; \
-            fi; \
-            docker logs '$CONTAINER_NAME' --tail 50 || true"
+          REMOTE_SCRIPT=$(cat <<REMOTE_EOF
+          set -euo pipefail
+          if ! docker image inspect ${CONTAINER_NAME}:previous >/dev/null 2>&1; then
+            echo 'No previous image found; rollback skipped.'
+            exit 0
+          fi
+          TARGET_PORT='${HOST_PORT}'
+          if command -v nginx >/dev/null 2>&1; then
+            P=\$(sudo nginx -T 2>/dev/null | awk -v domain='${DOMAIN_NAME_EFFECTIVE}' '
+              /^# configuration file / {file=\$4; sub(":\$","",file)}
+              \$0 ~ /server_name/ && index(\$0, domain) {in_server=1}
+              in_server && match(\$0, /proxy_pass[[:space:]]+http:\\/\\/127\\.0\\.0\\.1:([0-9]+)/, m) {print m[1]; exit}
+              in_server && \$0 ~ /^}/ {in_server=0}
+            ' || true)
+            if [ -n "\${P:-}" ]; then TARGET_PORT="\$P"; fi
+          fi
+          echo "Rollback bind port: \$TARGET_PORT"
+          docker stop '${CONTAINER_NAME}' 2>/dev/null || true
+          docker rm '${CONTAINER_NAME}' 2>/dev/null || true
+          docker run -d \
+            --name '${CONTAINER_NAME}' \
+            --restart unless-stopped \
+            -p 127.0.0.1:\$TARGET_PORT:${DASH_PORT} \
+            -v ~/.aws:/root/.aws:ro \
+            -e USE_S3_DATA='true' \
+            -e S3_BUCKET='${S3_BUCKET}' \
+            -e AWS_DEFAULT_REGION='${AWS_REGION}' \
+            -e AUTO_SYNC_INTERVAL='${AUTO_SYNC_INTERVAL}' \
+            -e PUBLIC_BASE_URL='https://${DOMAIN_NAME_EFFECTIVE}' \
+            ${CONTAINER_NAME}:previous
+          if [ -f '${APP_DIR}/scripts/deploy/setup_nginx_vhost.sh' ]; then
+            echo 'Updating nginx upstream to rollback port...'
+            chmod +x '${APP_DIR}/scripts/deploy/setup_nginx_vhost.sh' || true
+            DOMAIN_NAME='${DOMAIN_NAME_EFFECTIVE}' UPSTREAM_PORT="\$TARGET_PORT" bash '${APP_DIR}/scripts/deploy/setup_nginx_vhost.sh' || true
+          fi
+          docker logs '${CONTAINER_NAME}' --tail 50 || true
+          REMOTE_EOF
+          )
+          printf '%s\n' "$REMOTE_SCRIPT" | bash scripts/deploy/ci_ssm_run.sh "$EC2_INSTANCE_ID" "rollback"
