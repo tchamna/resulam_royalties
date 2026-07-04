@@ -13,6 +13,7 @@ fi
 
 REMOTE_SCRIPT=$(cat <<EOF
 set -euo pipefail
+git config --global --add safe.directory '*'
 cd '${APP_DIR:-/home/ec2-user/apps/resulam_royalties}' || { mkdir -p '${APP_DIR:-/home/ec2-user/apps/resulam_royalties}'; cd '${APP_DIR:-/home/ec2-user/apps/resulam_royalties}'; }
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then git init; fi
 if git remote get-url origin >/dev/null 2>&1; then
