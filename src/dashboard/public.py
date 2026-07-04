@@ -1089,7 +1089,7 @@ class PublicDashboard:
         # Tabs for different views - PUBLIC VERSION (removed Authors Analysis and Earning History)
         tabs = dbc.Tabs([
             dbc.Tab(label="🛒 African Languages Books", tab_id="purchase"),
-            dbc.Tab(label="🎨 Comics & Udemy", tab_id="resources"),
+            dbc.Tab(label="🎧 Other Resources", tab_id="resources"),
             dbc.Tab(label="Book Chatbot", tab_id="chatbot"),
             dbc.Tab(label="📊 Sales Overview", tab_id="sales"),
             dbc.Tab(label="📖 Books Analysis", tab_id="books"),
@@ -3822,6 +3822,8 @@ class PublicDashboard:
         """Create the curated resources tab content from the shared resources CSV."""
         resource_groups = {}
         for item in self._load_resource_items(purchase_only=False):
+            if item.get("category") == "Comics":
+                continue
             resource_groups.setdefault(item["category"] or "Resources", []).append(item)
 
         sections = []
@@ -3839,7 +3841,7 @@ class PublicDashboard:
                 dbc.Col([
                     html.H3("Resulam Resources", className="mb-2"),
                     html.P(
-                        "Comics, courses, audiobooks, apps, dictionaries, and support links.",
+                        "Courses, audiobooks, apps, dictionaries, conjugators, and support links.",
                         className="text-muted mb-3",
                     ),
                 ])
