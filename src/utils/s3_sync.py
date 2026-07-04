@@ -203,6 +203,8 @@ def sync_data_on_startup():
          str(data_dir / 'KDP_OrdersResulamBookSales2015_2025RoyaltiesReportsHistory.xlsx')),
         ('Resulam_books_database_Amazon_base_de_donnee_livres.csv',
          str(data_dir / 'Resulam_books_database_Amazon_base_de_donnee_livres.csv')),
+        ('Resulam_resources_database.csv',
+         str(data_dir / 'Resulam_resources_database.csv')),
     ]
     
     print(f"📡 Syncing {len(files_to_download)} files from s3://{bucket}")

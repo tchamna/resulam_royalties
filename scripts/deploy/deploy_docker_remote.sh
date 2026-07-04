@@ -79,6 +79,10 @@ wait_for_http_ready() {
 }
 
 mkdir -p "${STATE_DIR}" || true
+HOST_STATE_DIR="$(pwd)/${STATE_DIR}"
+: "${CHATBOT_RAG_ENABLED:=true}"
+: "${CHATBOT_RAG_TOP_K:=30}"
+: "${CHATBOT_RAG_INDEX_PATH:=/app/.deploy_state/chatbot_rag_index.pkl}"
 
 # Allow "HOST_PORT=auto" to enable auto port selection without extra flags.
 if [[ "${HOST_PORT}" == "auto" ]]; then
@@ -181,11 +185,15 @@ if [[ "${ZERO_DOWNTIME}" == "true" ]]; then
     --restart unless-stopped \
     -p 127.0.0.1:${HOST_PORT}:${DASH_PORT} \
     -v ~/.aws:/root/.aws:ro \
+    -v "${HOST_STATE_DIR}:/app/.deploy_state" \
     -e USE_S3_DATA="${USE_S3_DATA}" \
     -e S3_BUCKET="${S3_BUCKET}" \
     -e AWS_DEFAULT_REGION="${AWS_REGION}" \
     -e AUTO_SYNC_INTERVAL="${AUTO_SYNC_INTERVAL}" \
     -e PUBLIC_BASE_URL="${PUBLIC_BASE_URL}" \
+    -e CHATBOT_RAG_ENABLED="${CHATBOT_RAG_ENABLED}" \
+    -e CHATBOT_RAG_INDEX_PATH="${CHATBOT_RAG_INDEX_PATH}" \
+    -e CHATBOT_RAG_TOP_K="${CHATBOT_RAG_TOP_K}" \
     resulam-royalties:latest
 
   echo "Waiting for container to start..."
@@ -244,11 +252,15 @@ else
     --restart unless-stopped \
     -p 127.0.0.1:${HOST_PORT}:${DASH_PORT} \
     -v ~/.aws:/root/.aws:ro \
+    -v "${HOST_STATE_DIR}:/app/.deploy_state" \
     -e USE_S3_DATA="${USE_S3_DATA}" \
     -e S3_BUCKET="${S3_BUCKET}" \
     -e AWS_DEFAULT_REGION="${AWS_REGION}" \
     -e AUTO_SYNC_INTERVAL="${AUTO_SYNC_INTERVAL}" \
     -e PUBLIC_BASE_URL="${PUBLIC_BASE_URL}" \
+    -e CHATBOT_RAG_ENABLED="${CHATBOT_RAG_ENABLED}" \
+    -e CHATBOT_RAG_INDEX_PATH="${CHATBOT_RAG_INDEX_PATH}" \
+    -e CHATBOT_RAG_TOP_K="${CHATBOT_RAG_TOP_K}" \
     resulam-royalties:latest
 
   if ! wait_for_http_ready "${HOST_PORT}" "${STARTUP_TIMEOUT_SECONDS}"; then

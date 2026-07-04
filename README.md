@@ -58,3 +58,18 @@ Proprietary software for Resulam Books.
 ---
 
 Built with ❤️ for Resulam Books
+
+## Chatbot (Optional)
+
+The public dashboard includes a lightweight book chatbot. It defaults to a free local
+LLM via Ollama (if running) and falls back to keyword search when unavailable.
+
+Set any of these environment variables to customize:
+- `CHATBOT_USE_LLM=true`
+- `CHATBOT_LLM_PROVIDER=ollama`
+- `CHATBOT_OLLAMA_URL=http://localhost:11434`
+- `CHATBOT_LLM_MODEL=llama3.2:3b`
+- `CHATBOT_RESULT_LIMIT=12`
+- `CHATBOT_RAG_ENABLED=true`
+- `CHATBOT_RAG_INDEX_PATH=data/chatbot_rag_index.pkl`
+- `CHATBOT_RAG_TOP_K=30`

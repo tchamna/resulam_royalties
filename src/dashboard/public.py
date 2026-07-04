@@ -1,20 +1,24 @@
-"""
+﻿"""
 Modern Dash Dashboard Application
 """
 import dash
+import os
+import re
 from dash import html, dcc, Input, Output, State
 import dash_bootstrap_components as dbc
-from typing import Dict
+from typing import Dict, List
 from pathlib import Path
 import pandas as pd
 import math
-import re
 import unicodedata
 import plotly.graph_objects as go
+import requests
 
-from ..config import DASHBOARD_CONFIG, CURRENT_YEAR, LAST_YEAR, AUTHOR_NORMALIZATION, NET_REVENUE_PERCENTAGE, BOOKS_DATABASE_PATH
+from ..config import DASHBOARD_CONFIG, CURRENT_YEAR, LAST_YEAR, AUTHOR_NORMALIZATION, NET_REVENUE_PERCENTAGE, BOOKS_DATABASE_PATH, RESOURCES_DATABASE_PATH
 from ..visualization import SalesCharts, AuthorCharts, GeographicCharts, SummaryMetrics
 from ..visualization.earning_history import EarningHistoryCharts
+from ..utils.chatbot import ChatbotEngine
+from ..utils.chatbot_llm import LLMChatbotEngine
 
 
 def sort_with_accents(items: list) -> list:
@@ -698,6 +702,33 @@ class PublicDashboard:
         
         # Get available years for filtering
         self.available_years = sorted(self.royalties['Year Sold'].unique().tolist())
+
+        # Cache for book cover lookup (local or S3)
+        self._available_covers = None
+        self._available_covers_source = None
+
+        # Chatbot engine (optional, falls back to keyword search on failure)
+        self.chatbot_engine_rules = None
+        self.chatbot_engine_llm = None
+        self.chatbot_init_error = None
+        self.chatbot_llm_error = None
+        try:
+            self.chatbot_engine_rules = ChatbotEngine.from_csv(
+                BOOKS_DATABASE_PATH,
+                royalties_df=self.royalties,
+            )
+        except Exception as e:
+            self.chatbot_init_error = str(e)
+            print(f"Warning: Chatbot disabled: {e}")
+
+        try:
+            self.chatbot_engine_llm = LLMChatbotEngine.from_csv(
+                BOOKS_DATABASE_PATH,
+                royalties_df=self.royalties,
+            )
+        except Exception as e:
+            self.chatbot_llm_error = str(e)
+            print(f"Warning: LLM chatbot disabled: {e}")
         
         # Setup layout and callbacks
         self._create_layout()
@@ -840,6 +871,8 @@ class PublicDashboard:
             all_categories = sorted(books_df['category'].dropna().unique().tolist())
         except Exception:
             all_categories = []
+        resource_categories = self._get_resource_categories(purchase_only=True)
+        all_categories = sorted(set(all_categories).union(resource_categories))
 
         category_label_overrides = {
             "Phrasebook - Guide de Conversations": "Phrasebooks-Guide de conversation",
@@ -1056,6 +1089,8 @@ class PublicDashboard:
         # Tabs for different views - PUBLIC VERSION (removed Authors Analysis and Earning History)
         tabs = dbc.Tabs([
             dbc.Tab(label="🛒 African Languages Books", tab_id="purchase"),
+            dbc.Tab(label="🎨 Comics & Udemy", tab_id="resources"),
+            dbc.Tab(label="Book Chatbot", tab_id="chatbot"),
             dbc.Tab(label="📊 Sales Overview", tab_id="sales"),
             dbc.Tab(label="📖 Books Analysis", tab_id="books"),
             dbc.Tab(label="🌍 Geographic Distribution", tab_id="geography"),
@@ -1093,6 +1128,10 @@ class PublicDashboard:
             
             # Store to signal data refresh without full reload
             dcc.Store(id='data-refresh-signal', storage_type='memory'),
+
+            # Chatbot stores
+            dcc.Store(id="chat-history-store", storage_type="session"),
+            dcc.Store(id="chat-session-store", storage_type="session", data={"filters": {}}),
             
             # Toast notification for data updates
             dbc.Toast(
@@ -1620,6 +1659,7 @@ class PublicDashboard:
                 for cat in royalty_nickname_to_categories.get(nick, set()):
                     if cat:
                         available_categories.add(cat)
+            available_categories.update(self._get_resource_categories(purchase_only=True))
             
             available_categories = sorted(list(available_categories))
             
@@ -2063,6 +2103,10 @@ class PublicDashboard:
             
             if active_tab == "purchase":
                 return self._create_purchase_tab(filtered_royalties, selected_language, selected_author, selected_booktype, selected_book, selected_category)
+            elif active_tab == "resources":
+                return self._create_resources_tab()
+            elif active_tab == "chatbot":
+                return self._create_chatbot_tab()
             elif active_tab == "sales":
                 return self._create_sales_tab(filtered_royalties, selected_years, selected_language)
             elif active_tab == "books":
@@ -2072,6 +2116,97 @@ class PublicDashboard:
             
             return html.Div("Select a tab to view content")
         
+        @self.app.callback(
+            Output("chat-history-store", "data"),
+            Output("chat-session-store", "data"),
+            Output("chat-history-view", "children"),
+            Output("chatbot-results", "children"),
+            Output("chat-input", "value"),
+            Output("chat-engine-label", "children"),
+            Input("chat-send-btn", "n_clicks"),
+            Input("chat-clear-btn", "n_clicks"),
+            State("chat-input", "value"),
+            State("chat-history-store", "data"),
+            State("chat-session-store", "data"),
+            State("chat-engine-toggle", "value"),
+            State("chat-model-dropdown", "value"),
+            prevent_initial_call=True
+        )
+        def handle_chat(send_clicks, clear_clicks, message, history, session, use_llm, model_name):
+            """Handle chat input and update results."""
+            ctx = dash.callback_context
+            if not ctx.triggered:
+                raise dash.exceptions.PreventUpdate
+
+            trigger = ctx.triggered[0]['prop_id'].split('.')[0]
+            history = history or []
+            session = session or {"filters": {}}
+            engine_label = "LLM" if use_llm else "Rules"
+
+            if trigger == "chat-clear-btn":
+                empty_history = []
+                empty_session = {"filters": {}}
+                return (
+                    empty_history,
+                    empty_session,
+                    self._render_chat_history(empty_history),
+                    self._render_chat_results(None),
+                    "",
+                    engine_label
+                )
+
+            if not message or not message.strip():
+                raise dash.exceptions.PreventUpdate
+
+            user_message = message.strip()
+            history.append({"role": "user", "content": user_message})
+
+            engine_mode = "llm" if use_llm else "rules"
+            engine_notice = ""
+            engine = self.chatbot_engine_llm if engine_mode == "llm" else self.chatbot_engine_rules
+            if engine is None and self.chatbot_engine_rules is not None:
+                engine = self.chatbot_engine_rules
+                engine_notice = "LLM engine unavailable; using rules."
+                engine_label = "Rules"
+            if use_llm and model_name and engine is self.chatbot_engine_llm:
+                engine.ollama_model = model_name
+
+            if engine is None:
+                response_text = (
+                    f"Chatbot unavailable: {self.chatbot_init_error or 'Missing books database.'}"
+                )
+                history.append({"role": "assistant", "content": response_text})
+                return (
+                    history,
+                    session,
+                    self._render_chat_history(history),
+                    self._render_chat_results(None),
+                    "",
+                    engine_label
+                )
+
+            response = engine.respond(
+                user_message,
+                session.get("filters", {}),
+                history
+            )
+            if engine_notice:
+                if response.note:
+                    response.note = f"{engine_notice} {response.note}"
+                else:
+                    response.note = engine_notice
+            history.append({"role": "assistant", "content": response.message})
+            session["filters"] = response.filters
+
+            return (
+                history,
+                session,
+                self._render_chat_history(history),
+                self._render_chat_results(response),
+                "",
+                engine_label
+            )
+
         @self.app.callback(
             Output('author-selector-dropdown', 'value'),
             [Input('clear-all-btn', 'n_clicks'),
@@ -3210,6 +3345,550 @@ class PublicDashboard:
             ])
         ], fluid=True)
     
+    
+    def _get_available_covers(self):
+        """Resolve book cover images from local assets or S3."""
+        use_s3_images = os.getenv('USE_S3_DATA', 'false').lower() == 'true'
+        source = "s3" if use_s3_images else "local"
+
+        if self._available_covers is not None and self._available_covers_source == source:
+            return self._available_covers
+
+        available_covers = {}
+        if use_s3_images:
+            try:
+                import boto3
+                from urllib.parse import quote
+
+                s3 = boto3.client('s3')
+                bucket_name = 'resulam-images'
+                prefix = 'ResulamBookCoversQRCode_Compressed/Book'
+                s3_base_url = "https://resulam-images.s3.amazonaws.com/ResulamBookCoversQRCode_Compressed"
+
+                resp = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+                for obj in resp.get('Contents', []):
+                    key = obj['Key']
+                    filename = key.split('/')[-1]
+                    if filename.lower().startswith('book'):
+                        name_part = filename[4:]
+                        parts = name_part.split('_', 1)
+                        if parts:
+                            num_str = parts[0].strip('_')
+                            if num_str.isdigit():
+                                book_num = int(num_str)
+                                available_covers[book_num] = f"{s3_base_url}/{quote(filename)}"
+            except Exception as e:
+                print(f"Warning: Could not fetch S3 cover list: {e}")
+        else:
+            assets_path = Path(__file__).parent.parent.parent / 'assets'
+            for cover_folder in ['book_covers', 'resource_covers']:
+                book_covers_path = assets_path / cover_folder
+                if book_covers_path.exists():
+                    for img_file in book_covers_path.glob('book*.*'):
+                        name = img_file.stem.lower()
+                        if name.startswith('book'):
+                            parts = name[4:].split('_', 1)
+                            if parts:
+                                num_str = parts[0].strip('_')
+                                if num_str.isdigit():
+                                    book_num = int(num_str)
+                                    available_covers.setdefault(book_num, f"assets/{cover_folder}/{img_file.name}")
+
+        self._available_covers = available_covers
+        self._available_covers_source = source
+        return available_covers
+
+    def _build_book_cards(self, filtered_books: pd.DataFrame) -> list:
+        """Build book cards with cover images and purchase links."""
+        available_covers = self._get_available_covers()
+        book_cards = []
+
+        for _, book in filtered_books.iterrows():
+            title = book.get('title', 'Unknown Title')
+            if ' - ' in str(title):
+                title = str(title).split(' - ')[0].strip()
+
+            language = book.get('language_name', 'Unknown')
+            authors = book.get('authors', 'Unknown')
+            book_id = book.get('id', 0)
+
+            cover_image = available_covers.get(book_id, None)
+
+            paperback_link = book.get('paperback', '')
+            ebook_link = book.get('ebook', '')
+            hardcover_link = book.get('hard_cover', '')
+
+            link_buttons = []
+            if pd.notna(paperback_link) and paperback_link:
+                link_buttons.append(
+                    dbc.Button(
+                        [html.I(className="fas fa-book me-2"), "Paperback"],
+                        href=paperback_link,
+                        target="_blank",
+                        color="primary",
+                        size="sm",
+                        className="me-2 mb-2"
+                    )
+                )
+            if pd.notna(ebook_link) and ebook_link:
+                link_buttons.append(
+                    dbc.Button(
+                        [html.I(className="fas fa-tablet-alt me-2"), "eBook"],
+                        href=ebook_link,
+                        target="_blank",
+                        color="success",
+                        size="sm",
+                        className="me-2 mb-2"
+                    )
+                )
+            if pd.notna(hardcover_link) and hardcover_link:
+                link_buttons.append(
+                    dbc.Button(
+                        [html.I(className="fas fa-book-open me-2"), "Hardcover"],
+                        href=hardcover_link,
+                        target="_blank",
+                        color="warning",
+                        size="sm",
+                        className="me-2 mb-2"
+                    )
+                )
+
+            if not link_buttons:
+                link_buttons.append(html.Span("No purchase links available", className="text-muted"))
+
+            image_link = None
+            if pd.notna(paperback_link) and paperback_link:
+                image_link = paperback_link
+            elif pd.notna(ebook_link) and ebook_link:
+                image_link = ebook_link
+            elif pd.notna(hardcover_link) and hardcover_link:
+                image_link = hardcover_link
+
+            card_children = []
+            if cover_image:
+                cover_img = dbc.CardImg(
+                    src=cover_image,
+                    top=True,
+                    style={
+                        "height": "250px",
+                        "objectFit": "cover",
+                        "objectPosition": "center top",
+                        "backgroundColor": "transparent",
+                        "cursor": "pointer" if image_link else "default",
+                    }
+                )
+                if image_link:
+                    card_children.append(html.A(cover_img, href=image_link, target="_blank"))
+                else:
+                    card_children.append(cover_img)
+
+            card_children.append(
+                dbc.CardBody([
+                    html.H6(
+                        title[:70] + "..." if len(str(title)) > 70 else title,
+                        className="card-title",
+                        style={"fontSize": "0.9rem", "fontWeight": "600"},
+                    ),
+                    html.P([
+                        html.Span(f"Language: {language}", className="me-2"),
+                        html.Br(),
+                        html.Span(f"Author: {authors}", style={"fontSize": "0.8rem"}),
+                    ], className="card-text text-muted small mb-2"),
+                    html.Div(link_buttons, className="mt-auto"),
+                ], className="d-flex flex-column")
+            )
+
+            card = dbc.Card(card_children, className="shadow-sm mb-3 h-100")
+            book_cards.append(dbc.Col(card, xs=12, sm=6, md=4, lg=3, className="mb-3"))
+
+        return book_cards
+
+    def _render_chat_history(self, history: list) -> list:
+        if not history:
+            return [
+                html.Div(
+                    "Ask me about a language, author, or category.",
+                    className="text-muted small"
+                )
+            ]
+
+        items = []
+        for message in history[-20:]:
+            role = message.get("role", "assistant")
+            content = message.get("content", "")
+            class_name = "chat-bubble chat-user" if role == "user" else "chat-bubble chat-assistant"
+            if isinstance(content, str) and "\n" in content:
+                parts = content.split("\n")
+                children = []
+                for idx, part in enumerate(parts):
+                    if idx:
+                        children.append(html.Br())
+                    children.append(part)
+                items.append(html.Div(children, className=class_name))
+            else:
+                items.append(html.Div(content, className=class_name))
+        return items
+
+    def _render_chat_results(self, response) -> html.Div:
+        if response is None:
+            return dbc.Alert(
+                "Ask for a language, author, or category to see matching books.",
+                color="info",
+                className="mb-0"
+            )
+
+        if response.total_results == 0:
+            return dbc.Alert(
+                "No books found for this request. Try another language or category.",
+                color="warning",
+                className="mb-0"
+            )
+
+        filter_parts = []
+        for key in ["year", "language", "category", "author", "format"]:
+            if response.filters.get(key):
+                label = "Year" if key == "year" else key.title()
+                filter_parts.append(f"{label}: {response.filters[key]}")
+        if response.keywords:
+            filter_parts.append(f"Keywords: {', '.join(response.keywords)}")
+        filter_text = " | ".join(filter_parts) if filter_parts else "All Books"
+
+        header = html.Div([
+            html.H6(f"Matches ({response.total_results})", className="mb-1"),
+            html.Div(filter_text, className="text-muted small"),
+        ], className="mb-2")
+
+        note = html.Div(response.note, className="text-muted small mb-2") if response.note else None
+        book_cards = self._build_book_cards(response.results)
+
+        return html.Div([
+            header,
+            note,
+            dbc.Row(book_cards)
+        ])
+
+    def _get_ollama_models(self) -> List[str]:
+        """Return available local Ollama models, or an empty list on failure."""
+        ollama_url = os.getenv("CHATBOT_OLLAMA_URL", "http://localhost:11434").rstrip("/")
+        if not ollama_url:
+            return []
+        try:
+            response = requests.get(f"{ollama_url}/api/tags", timeout=3)
+            response.raise_for_status()
+            data = response.json()
+        except Exception:
+            return []
+
+        models = []
+        for item in data.get("models", []):
+            name = str(item.get("name", "")).strip()
+            if name:
+                models.append(name)
+        return sorted(set(models))
+
+    def _create_chatbot_tab(self):
+        """Create the chatbot tab content."""
+        status = None
+        if self.chatbot_engine_rules is None:
+            status = dbc.Alert(
+                f"Chatbot unavailable: {self.chatbot_init_error or 'Missing books database.'}",
+                color="warning",
+                className="mb-3"
+            )
+        elif self.chatbot_engine_llm is None:
+            status = dbc.Alert(
+                "LLM engine unavailable; rules engine only.",
+                color="info",
+                className="mb-3"
+            )
+
+        engine_default = os.getenv("CHATBOT_ENGINE", "rules").lower().strip()
+        use_llm_default = engine_default == "llm"
+        engine_label = "LLM" if use_llm_default else "Rules"
+        models = self._get_ollama_models()
+        model_options = [{"label": name, "value": name} for name in models]
+        model_default = None
+        env_model = os.getenv("CHATBOT_LLM_MODEL", "llama3.2:3b")
+        if model_options:
+            model_default = env_model if env_model in models else models[0]
+        model_disabled = not model_options
+        model_placeholder = "No local models" if model_disabled else "Select model"
+
+        chat_card = dbc.Card([
+            dbc.CardHeader(
+                dbc.Row([
+                    dbc.Col(html.H5("Book Chatbot", className="mb-0")),
+                    dbc.Col(
+                        html.Div(
+                            [
+                                html.Span("Engine:", className="text-muted small me-2"),
+                                html.Span(engine_label, id="chat-engine-label", className="text-muted small me-3"),
+                                dbc.Switch(
+                                    id="chat-engine-toggle",
+                                    label="LLM",
+                                    value=use_llm_default,
+                                    className="d-inline-block",
+                                ),
+                            ],
+                            className="d-flex align-items-center justify-content-center gap-2",
+                        ),
+                        className="text-center"
+                    ),
+                    dbc.Col(
+                        html.Div(
+                            [
+                                html.Span("Model:", className="text-muted small me-2"),
+                                dcc.Dropdown(
+                                    id="chat-model-dropdown",
+                                    options=model_options,
+                                    value=model_default,
+                                    placeholder=model_placeholder,
+                                    clearable=False,
+                                    searchable=True,
+                                    disabled=model_disabled,
+                                    style={"minWidth": "180px"},
+                                ),
+                            ],
+                            className="d-flex align-items-center justify-content-center gap-2",
+                        ),
+                        className="text-center"
+                    ),
+                    dbc.Col(
+                        dbc.Button(
+                            "Clear",
+                            id="chat-clear-btn",
+                            color="secondary",
+                            size="sm",
+                            className="ms-auto"
+                        ),
+                        className="text-end"
+                    ),
+                ], align="center")
+            ),
+            dbc.CardBody([
+                status if status else html.Div(),
+                html.Div(self._render_chat_history([]), id="chat-history-view", className="chat-history"),
+                html.Div([
+                    dcc.Textarea(
+                        id="chat-input",
+                        placeholder="Example: I want book about Basaa",
+                        className="chat-input"
+                    ),
+                    dbc.Button(
+                        "Send",
+                        id="chat-send-btn",
+                        color="primary",
+                        className="chat-send-btn"
+                    ),
+                ], className="chat-input-row"),
+                html.Div(
+                    "Tip: Ask about a language, author, category, or format (ebook, paperback).",
+                    className="text-muted small mt-2"
+                ),
+            ])
+        ], className="shadow-sm h-100")
+
+        results_card = dbc.Card([
+            dbc.CardHeader(html.H5("Book Matches", className="mb-0")),
+            dbc.CardBody(
+                dcc.Loading(
+                    id="chat-results-loading",
+                    type="default",
+                    children=html.Div(self._render_chat_results(None), id="chatbot-results")
+                )
+            )
+        ], className="shadow-sm h-100")
+
+        return dbc.Container([
+            dbc.Row([
+                dbc.Col(chat_card, md=5, className="mb-3"),
+                dbc.Col(results_card, md=7, className="mb-3"),
+            ])
+        ], fluid=True, className="chatbot-tab")
+
+    def _load_resource_items(self, purchase_only=False):
+        """Load non-book resources from the shared resources CSV."""
+        try:
+            resources_df = pd.read_csv(RESOURCES_DATABASE_PATH).fillna("")
+        except Exception as e:
+            print(f"Warning: Could not load resources database: {e}")
+            return []
+
+        if purchase_only and "display_in_purchase" in resources_df.columns:
+            resources_df = resources_df[
+                resources_df["display_in_purchase"].astype(str).str.lower().isin(["true", "1", "yes"])
+            ]
+
+        items = []
+        for _, row in resources_df.iterrows():
+            links = []
+            for idx in range(1, 4):
+                label = str(row.get(f"link{idx}_label", "")).strip()
+                url = str(row.get(f"link{idx}_url", "")).strip()
+                color = str(row.get(f"link{idx}_color", "")).strip() or "primary"
+                if label and url:
+                    links.append((label, url, color))
+
+            items.append({
+                "name": str(row.get("name", "")).strip(),
+                "category": str(row.get("category", "")).strip(),
+                "language": str(row.get("language", "")).strip() or "All",
+                "publication_date": str(row.get("publication_date", "")).strip(),
+                "image": str(row.get("image", "")).strip(),
+                "image_fit": str(row.get("image_fit", "")).strip() or "contain",
+                "description": str(row.get("description", "")).strip(),
+                "links": links,
+            })
+        return [item for item in items if item["name"]]
+
+    def _get_resource_categories(self, purchase_only=False):
+        """Return resource categories from the shared resources CSV."""
+        return sorted({
+            item["category"]
+            for item in self._load_resource_items(purchase_only=purchase_only)
+            if item.get("category")
+        })
+
+    def _build_resource_card(self, item, lg=3):
+        """Build one non-book resource card from the shared resource item shape."""
+        link_buttons = [
+            dbc.Button(
+                label,
+                href=url,
+                target="_blank",
+                color=color,
+                size="sm",
+                className="me-2 mb-2",
+            )
+            for label, url, color in item.get("links", [])
+        ]
+        primary_url = item["links"][0][1] if item.get("links") else None
+        card_children = []
+
+        if item.get("image"):
+            image_fit = item.get("image_fit", "cover")
+            object_fit = "cover"
+            object_position = "center top"
+            if isinstance(image_fit, str) and image_fit.startswith("cover:"):
+                object_position = image_fit.split(":", 1)[1].strip() or object_position
+            elif image_fit in {"cover", "contain", "fill", "scale-down", "none"}:
+                object_fit = image_fit
+
+            image = dbc.CardImg(
+                src=item["image"],
+                top=True,
+                style={
+                    "height": "250px",
+                    "objectFit": object_fit,
+                    "objectPosition": object_position,
+                    "backgroundColor": "transparent",
+                    "cursor": "pointer" if primary_url else "default",
+                },
+            )
+            card_children.append(html.A(image, href=primary_url, target="_blank") if primary_url else image)
+
+        details = []
+        language = item.get("language", "")
+        category = item.get("category", "")
+        description = item.get("description", "")
+        if language and language != "All":
+            details = [
+                html.Span(f"🌐 {language}", className="me-2"),
+                html.Br(),
+                html.Span(category, style={"fontSize": "0.8rem"}),
+            ]
+        elif description:
+            details = [description]
+        elif category:
+            details = [category]
+
+        body_children = [
+            html.H6(item.get("name", "Resource"), className="mb-2"),
+            html.P(details, className="card-text text-muted small mb-2") if details else html.Div(),
+            html.Div(link_buttons, className="mt-auto") if link_buttons else html.Span("Link coming soon", className="text-muted small"),
+        ]
+        card_children.append(dbc.CardBody(body_children, className="d-flex flex-column"))
+
+        return dbc.Col(
+            dbc.Card(card_children, className="shadow-sm h-100"),
+            xs=12,
+            sm=6,
+            md=4,
+            lg=lg,
+            className="mb-3",
+        )
+
+    def _create_resources_tab(self):
+        """Create the curated resources tab content from the shared resources CSV."""
+        resource_groups = {}
+        for item in self._load_resource_items(purchase_only=False):
+            resource_groups.setdefault(item["category"] or "Resources", []).append(item)
+
+        sections = []
+        for title, items in resource_groups.items():
+            entries = [
+                (pd.to_datetime(item.get("publication_date"), errors="coerce"), self._build_resource_card(item, lg=4))
+                for item in items
+            ]
+            entries.sort(key=lambda entry: entry[0] if not pd.isna(entry[0]) else pd.Timestamp.min, reverse=True)
+            sections.append(html.H4(title, className="mt-4 mb-3"))
+            sections.append(dbc.Row([card for _, card in entries]))
+
+        return dbc.Container([
+            dbc.Row([
+                dbc.Col([
+                    html.H3("Resulam Resources", className="mb-2"),
+                    html.P(
+                        "Comics, courses, audiobooks, apps, dictionaries, and support links.",
+                        className="text-muted mb-3",
+                    ),
+                ])
+            ]),
+            *sections,
+        ], fluid=True)
+
+    def _get_resource_preview_items(self):
+        """Return non-book resources shown in the purchase grid."""
+        return self._load_resource_items(purchase_only=True)
+
+    def _build_resource_preview_entries(self, selected_language=None, selected_category=None):
+        """Build dated non-book resource entries that share the book grid layout."""
+        preview_items = self._get_resource_preview_items()
+
+        if selected_language and selected_language != "all":
+            preview_items = [
+                item for item in preview_items
+                if item.get("language", "").lower() == selected_language.lower()
+            ]
+        if selected_category and selected_category != "all":
+            preview_items = [
+                item for item in preview_items
+                if item.get("category") == selected_category
+            ]
+
+        if not preview_items:
+            return []
+
+        cards = []
+        for item in preview_items:
+            card = self._build_resource_card(item, lg=3)
+            cards.append((pd.to_datetime(item.get("publication_date"), errors="coerce"), card))
+        return cards
+
+    def _build_resource_preview_cards(self, selected_language=None, selected_category=None):
+        """Build non-book resource cards that share the book grid layout."""
+        return [card for _, card in self._build_resource_preview_entries(selected_language, selected_category)]
+
+    def _create_resources_preview_section(self, selected_language=None, selected_category=None):
+        """Show key non-book resources on the main purchase tab."""
+        cards = self._build_resource_preview_cards(selected_language, selected_category)
+        if not cards:
+            return html.Div()
+        return html.Div([
+            html.H3("Comics & Online Courses", className="mt-2 mb-3"),
+            dbc.Row(cards),
+        ], className="mb-4")
+
     def _create_purchase_tab(self, data=None, selected_language=None, selected_author=None, selected_booktype=None, selected_book=None, selected_category=None):
         """Create purchase the book tab content with Amazon links"""
         import unicodedata
@@ -3307,9 +3986,16 @@ class PublicDashboard:
         # Apply category filter if selected (strict filter - must match exactly)
         if selected_category and selected_category != "all":
             filtered_books = filtered_books[filtered_books['category'] == selected_category]
-        
+
+        resource_entries = self._build_resource_preview_entries(selected_language, selected_category)
+        resource_cards = [card for _, card in resource_entries]
+        resources_preview = html.Div([
+            html.H3("Comics & Online Courses", className="mt-2 mb-3"),
+            dbc.Row(resource_cards),
+        ], className="mb-4") if resource_cards else html.Div()
         if len(filtered_books) == 0:
             return dbc.Container([
+                resources_preview,
                 dbc.Alert("No books found matching your filters.", color="info")
             ], fluid=True)
         
@@ -3348,24 +4034,26 @@ class PublicDashboard:
                 print(f"Warning: Could not fetch S3 cover list: {e}")
         else:
             # Local version - scan assets/book_covers folder
-            book_covers_path = Path(__file__).parent.parent.parent / 'assets' / 'book_covers'
-            if book_covers_path.exists():
-                for img_file in book_covers_path.glob('book*.*'):
-                    # Extract book number from filename like "book1_nickname.png"
-                    name = img_file.stem.lower()  # e.g., "book1_nufi_contes..."
-                    if name.startswith('book'):
-                        # Extract the book number (handle both book1_ and book1__ patterns)
-                        parts = name[4:].split('_', 1)  # After "book"
-                        if parts:
-                            # Handle patterns like "book1__" or "book1_"
-                            num_str = parts[0].strip('_')
-                            if num_str.isdigit():
-                                book_num = int(num_str)
-                                # Store with relative path for web serving
-                                available_covers[book_num] = f"assets/book_covers/{img_file.name}"
+            assets_path = Path(__file__).parent.parent.parent / 'assets'
+            for cover_folder in ['book_covers', 'resource_covers']:
+                book_covers_path = assets_path / cover_folder
+                if book_covers_path.exists():
+                    for img_file in book_covers_path.glob('book*.*'):
+                        # Extract book number from filename like "book1_nickname.png"
+                        name = img_file.stem.lower()  # e.g., "book1_nufi_contes..."
+                        if name.startswith('book'):
+                            # Extract the book number (handle both book1_ and book1__ patterns)
+                            parts = name[4:].split('_', 1)  # After "book"
+                            if parts:
+                                # Handle patterns like "book1__" or "book1_"
+                                num_str = parts[0].strip('_')
+                                if num_str.isdigit():
+                                    book_num = int(num_str)
+                                    # Store with relative path for web serving
+                                    available_covers.setdefault(book_num, f"assets/{cover_folder}/{img_file.name}")
         
         # Create book cards
-        book_cards = []
+        book_entries = []
         for _, book in filtered_books.iterrows():
             title = book.get('title', 'Unknown Title')
             # Clean title by removing date suffix
@@ -3440,7 +4128,13 @@ class PublicDashboard:
                 cover_img = dbc.CardImg(
                     src=cover_image,
                     top=True,
-                    style={"height": "250px", "objectFit": "contain", "backgroundColor": "#f8f9fa", "cursor": "pointer" if image_link else "default"}
+                    style={
+                        "height": "250px",
+                        "objectFit": "cover",
+                        "objectPosition": "center top",
+                        "backgroundColor": "transparent",
+                        "cursor": "pointer" if image_link else "default",
+                    }
                 )
                 # Wrap image in a link if we have a purchase link
                 if image_link:
@@ -3465,7 +4159,11 @@ class PublicDashboard:
             
             card = dbc.Card(card_children, className="shadow-sm mb-3 h-100")
             
-            book_cards.append(dbc.Col(card, xs=12, sm=6, md=4, lg=3, className="mb-3"))
+            publication_sort_date = pd.to_datetime(book.get('publication_date'), errors="coerce")
+            book_entries.append((
+                publication_sort_date,
+                dbc.Col(card, xs=12, sm=6, md=4, lg=3, className="mb-3")
+            ))
         
         # Build filter summary
         filter_parts = []
@@ -3517,6 +4215,12 @@ class PublicDashboard:
             }
         }
         download_data_json = json.dumps(download_data)
+        combined_entries = resource_entries + book_entries
+        combined_entries.sort(
+            key=lambda item: item[0] if not pd.isna(item[0]) else pd.Timestamp.min,
+            reverse=True,
+        )
+        combined_cards = [card for _, card in combined_entries]
         
         return dbc.Container([
             # Hidden store for download data
@@ -3535,7 +4239,8 @@ class PublicDashboard:
                     dcc.Download(id="download-purchase-txt"),
                 ])
             ]),
-            dbc.Row(book_cards)
+            html.H3("Comics, Courses & Books", className="mt-2 mb-3") if resource_cards else html.Div(),
+            dbc.Row(combined_cards)
         ], fluid=True)
     
     def run(self, debug: bool = None, host: str = None, port: int = None):
@@ -3582,3 +4287,4 @@ def create_dashboard(
     prefix: str = "/"
 ) -> PublicDashboard:
     return create_public_dashboard(data, server=server, prefix=prefix)
+

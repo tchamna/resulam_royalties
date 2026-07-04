@@ -112,13 +112,17 @@ def main():
         print("   Please check your data files and try again.")
         return
     
-    # Export processed data
-    print("\n💾 Exporting processed data...")
-    try:
-        exported_files = export_processed_data(data)
-        print(f"✅ Processed data exported successfully!")
-    except Exception as e:
-        print(f"⚠️  Warning: Could not export data: {e}")
+    # Export processed data (optional)
+    export_enabled = os.getenv("EXPORT_PROCESSED_DATA", "false").lower() in {"1", "true", "yes"}
+    if export_enabled:
+        print("\n💾 Exporting processed data...")
+        try:
+            export_processed_data(data)
+            print("✅ Processed data exported successfully!")
+        except Exception as e:
+            print(f"⚠️  Warning: Could not export data: {e}")
+    else:
+        print("\n💾 Skipping processed data export (EXPORT_PROCESSED_DATA disabled).")
     
     # Create and run dashboard
     print("\n🚀 Starting dashboard...")

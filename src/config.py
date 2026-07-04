@@ -20,15 +20,17 @@ import os
 _USE_S3 = os.getenv('USE_S3_DATA', 'false').lower() == 'true'
 
 # Local paths (always available for fallback/development)
-MAIN_DIR = r"G:\My Drive\Mbú'ŋwɑ̀'nì\RoyaltiesResulam"
+MAIN_DIR = "G:\\My Drive\\Mb\u00fa'\u014bw\u0251\u0300'n\u00ec\\RoyaltiesResulam"
 LOCAL_BOOKS_DATABASE_PATH = Path(MAIN_DIR) / "Resulam_books_database_Amazon_base_de_donnee_livres.csv"
 LOCAL_ROYALTIES_HISTORY_PATH = Path(MAIN_DIR) / f"KDP_OrdersResulamBookSales2015_{CURRENT_YEAR}RoyaltiesReportsHistory.xlsx"
+LOCAL_RESOURCES_DATABASE_PATH = Path(MAIN_DIR) / "Resulam_resources_database.csv"
 
 # EC2 paths - data downloaded from S3
 DATA_DIR_LOCAL = PROJECT_ROOT / "data"
 EC2_BOOKS_DATABASE_PATH = DATA_DIR_LOCAL / "Resulam_books_database_Amazon_base_de_donnee_livres.csv"
 EC2_ROYALTIES_HISTORY_PATH = DATA_DIR_LOCAL / f"KDP_OrdersResulamBookSales2015_{CURRENT_YEAR}RoyaltiesReportsHistory.xlsx"
 EC2_ROYALTIES_HISTORY_PATH_FALLBACK = DATA_DIR_LOCAL / f"KDP_OrdersResulamBookSales2015_{LAST_YEAR}RoyaltiesReportsHistory.xlsx"
+EC2_RESOURCES_DATABASE_PATH = DATA_DIR_LOCAL / "Resulam_resources_database.csv"
 
 # Determine which paths to use - prioritize S3-downloaded files, fallback to local
 def _get_data_paths():
@@ -50,7 +52,16 @@ def _get_data_paths():
             return EC2_BOOKS_DATABASE_PATH, _best_royalties(EC2_ROYALTIES_HISTORY_PATH, EC2_ROYALTIES_HISTORY_PATH_FALLBACK)
         return LOCAL_BOOKS_DATABASE_PATH, LOCAL_ROYALTIES_HISTORY_PATH
 
+def _get_resource_database_path(books_database_path):
+    """Resolve the shared resources database from the same source as books."""
+    if _USE_S3:
+        return EC2_RESOURCES_DATABASE_PATH
+    if books_database_path == LOCAL_BOOKS_DATABASE_PATH and LOCAL_RESOURCES_DATABASE_PATH.exists():
+        return LOCAL_RESOURCES_DATABASE_PATH
+    return EC2_RESOURCES_DATABASE_PATH
+
 BOOKS_DATABASE_PATH, ROYALTIES_HISTORY_PATH = _get_data_paths()
+RESOURCES_DATABASE_PATH = _get_resource_database_path(BOOKS_DATABASE_PATH)
 
 # Author name normalization mapping
 AUTHOR_NORMALIZATION = {

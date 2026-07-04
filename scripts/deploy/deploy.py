@@ -82,12 +82,13 @@ AWS_SECRET_ACCESS_KEY = get_env("AWS_SECRET_ACCESS_KEY")
 
 
 # Local data directory for uploading to S3
-LOCAL_DATA_DIR = Path(r"G:\My Drive\Mbú'ŋwɑ̀'nì\RoyaltiesResulam")
+LOCAL_DATA_DIR = Path(get_env("LOCAL_DATA_DIR") or "G:\\My Drive\\Mb\u00fa'\u014bw\u0251\u0300'n\u00ec\\RoyaltiesResulam")
 
 # S3 data files to upload/download
 # If your project does not require S3 data files, set S3_DATA_FILES = []
 S3_DATA_FILES = [
     "Resulam_books_database_Amazon_base_de_donnee_livres.csv",
+    "Resulam_resources_database.csv",
     "KDP_OrdersResulamBookSales2015_2025RoyaltiesReportsHistory.xlsx"
 ]
 
