@@ -1,15 +1,21 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 set -euo pipefail
 
 INSTANCE_ID="${1:?Usage: ci_ssm_run.sh INSTANCE_ID [comment]}"
 COMMENT="${2:-github-actions}"
 TIMEOUT_SECONDS="${SSM_TIMEOUT_SECONDS:-7200}"
 POLL_SECONDS="${SSM_POLL_SECONDS:-10}"
+DEPLOY_USER="${SSM_DEPLOY_USER:-ec2-user}"
 
 SCRIPT="$(cat)"
 if [[ -z "${SCRIPT//[[:space:]]/}" ]]; then
   echo "ERROR: empty script on stdin" >&2
   exit 1
+fi
+
+if [[ "${SSM_RUN_AS_ROOT:-false}" != "true" ]]; then
+  B64="$(printf '%s' "$SCRIPT" | base64 -w0)"
+  SCRIPT="printf '%s' '${B64}' | base64 -d | sudo -u ${DEPLOY_USER} -H bash -s"
 fi
 
 PARAMS="$(jq -n --arg script "$SCRIPT" '{commands: [$script]}')"
