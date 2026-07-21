@@ -6,6 +6,7 @@ from src.dashboard.public import (
     PublicDashboard,
     matches_resource_filters,
     parse_filter_search_string,
+    resource_year_filter,
 )
 
 
@@ -43,6 +44,11 @@ class ResourceFilterTests(unittest.TestCase):
             ),
             ["Ewondo Udemy"],
         )
+
+    def test_lifetime_does_not_become_resource_publication_years(self):
+        self.assertIsNone(resource_year_filter("lifetime"))
+        self.assertIsNone(resource_year_filter(None))
+        self.assertEqual(resource_year_filter(2026), [2026])
 
     def test_url_parser_decodes_plus_and_normalizes_case(self):
         context = {

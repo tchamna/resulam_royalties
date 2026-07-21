@@ -176,6 +176,11 @@ def _active_filter(value) -> bool:
     return value is not None and str(value).strip().casefold() not in {"", "all", "lifetime"}
 
 
+def resource_year_filter(selected_year):
+    """Translate the visible year selection without treating Lifetime as all explicit years."""
+    return [selected_year] if isinstance(selected_year, int) else None
+
+
 def matches_resource_filters(
     item: dict,
     selected_years=None,
@@ -2601,6 +2606,7 @@ class PublicDashboard:
             Output("tab-content", "children"),
             Input("dashboard-tabs", "active_tab"),
             Input("year-filter-store", "data"),
+            Input("year-filter", "value"),
             Input("language-filter", "value"),
             Input("author-filter", "value"),
             Input("booktype-filter", "value"),
@@ -2608,7 +2614,7 @@ class PublicDashboard:
             Input("category-filter", "value"),
             prevent_initial_call=False
         )
-        def render_tab_content(active_tab, selected_years, selected_language, selected_author, selected_booktype, selected_book, selected_category):
+        def render_tab_content(active_tab, selected_years, selected_year, selected_language, selected_author, selected_booktype, selected_book, selected_category):
             """Render content based on active tab, years, language, author, book type, book, and category filter"""
             
             # Filter data based on selected years
@@ -2704,7 +2710,7 @@ class PublicDashboard:
                     selected_author=selected_author,
                     selected_booktype=selected_booktype,
                     selected_book=selected_book,
-                    selected_years=selected_years,
+                    selected_years=resource_year_filter(selected_year),
                 )
             elif active_tab == "chatbot":
                 return self._create_chatbot_tab()
