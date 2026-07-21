@@ -15,7 +15,16 @@ import unicodedata
 import plotly.graph_objects as go
 import requests
 
-from ..config import DASHBOARD_CONFIG, CURRENT_YEAR, LAST_YEAR, AUTHOR_NORMALIZATION, NET_REVENUE_PERCENTAGE, BOOKS_DATABASE_PATH, RESOURCES_DATABASE_PATH
+from ..config import (
+    DASHBOARD_CONFIG,
+    CURRENT_YEAR,
+    LAST_YEAR,
+    AUTHOR_NORMALIZATION,
+    NET_REVENUE_PERCENTAGE,
+    BOOKS_DATABASE_PATH,
+    RESOURCES_DATABASE_PATH,
+    UNIVERSAL_LANGUAGE_VALUES,
+)
 from ..visualization import SalesCharts, AuthorCharts, GeographicCharts, SummaryMetrics
 from ..visualization.earning_history import EarningHistoryCharts
 from ..utils.chatbot import ChatbotEngine
@@ -73,6 +82,47 @@ def normalize_author_name(name: str) -> str:
     if name in AUTHOR_NORMALIZATION:
         return AUTHOR_NORMALIZATION[name]
     return name
+
+
+_UNIVERSAL_LANGUAGE_LOOKUP = {value.casefold() for value in UNIVERSAL_LANGUAGE_VALUES}
+
+
+def _normalize_language_value(language) -> str:
+    if language is None or (isinstance(language, float) and pd.isna(language)):
+        return ""
+    return str(language).strip()
+
+
+def is_universal_language(language) -> bool:
+    """Return True when a language value is universal (e.g. Polyglot, All)."""
+    normalized = _normalize_language_value(language).casefold()
+    return bool(normalized) and normalized in _UNIVERSAL_LANGUAGE_LOOKUP
+
+
+def matches_language_filter(language, selected_language: str) -> bool:
+    """Return True when a row/item language matches the selected language filter."""
+    if not selected_language or selected_language == "all":
+        return True
+
+    row_language = _normalize_language_value(language)
+    if not row_language:
+        return False
+    if row_language == selected_language:
+        return True
+
+    selected_is_universal = selected_language.casefold() in _UNIVERSAL_LANGUAGE_LOOKUP
+    return not selected_is_universal and is_universal_language(row_language)
+
+
+def filter_by_language(
+    df: pd.DataFrame,
+    selected_language: str,
+    column: str = "Language",
+) -> pd.DataFrame:
+    """Filter a dataframe by language, keeping universal languages for any specific filter."""
+    if not selected_language or selected_language == "all":
+        return df
+    return df[df[column].apply(lambda value: matches_language_filter(value, selected_language))]
 
 
 def filter_by_author(df: pd.DataFrame, selected_author: str, authors_column: str = 'Authors') -> pd.DataFrame:
@@ -1571,8 +1621,8 @@ class PublicDashboard:
                     df_exploded = df_exploded[df_exploded['book_nick_name'].isin(category_nicknames)]
             
             if selected_language and selected_language != "all":
-                df = df[df['Language'] == selected_language]
-                df_exploded = df_exploded[df_exploded['Language'] == selected_language]
+                df = filter_by_language(df, selected_language)
+                df_exploded = filter_by_language(df_exploded, selected_language)
             
             if selected_author and selected_author != "all":
                 df = filter_by_author(df, selected_author, 'Authors')
@@ -2017,8 +2067,8 @@ class PublicDashboard:
             
             # Apply language filter
             if selected_language and selected_language != "all":
-                filtered_df = filtered_df[filtered_df['Language'] == selected_language]
-                filtered_exploded = filtered_exploded[filtered_exploded['Language'] == selected_language]
+                filtered_df = filter_by_language(filtered_df, selected_language)
+                filtered_exploded = filter_by_language(filtered_exploded, selected_language)
             
             # Apply author filter
             if selected_author and selected_author != "all":
@@ -2097,7 +2147,7 @@ class PublicDashboard:
             filter_parts = []
             
             if selected_language and selected_language != "all":
-                trend_data = trend_data[trend_data['Language'] == selected_language]
+                trend_data = filter_by_language(trend_data, selected_language)
                 filter_parts.append(selected_language)
             
             if selected_author and selected_author != "all":
@@ -2276,8 +2326,8 @@ class PublicDashboard:
             
             # Filter by language if selected
             if selected_language and selected_language != "all":
-                filtered_royalties = filtered_royalties[filtered_royalties['Language'] == selected_language]
-                filtered_exploded = filtered_exploded[filtered_exploded['Language'] == selected_language]
+                filtered_royalties = filter_by_language(filtered_royalties, selected_language)
+                filtered_exploded = filter_by_language(filtered_exploded, selected_language)
             
             # Filter by author if selected
             if selected_author and selected_author != "all":
@@ -2502,7 +2552,7 @@ class PublicDashboard:
             
             # Filter by language if selected
             if selected_language and selected_language != "all":
-                filtered_exploded = filtered_exploded[filtered_exploded['Language'] == selected_language]
+                filtered_exploded = filter_by_language(filtered_exploded, selected_language)
             
             # Filter by author if selected
             if selected_author and selected_author != "all":
@@ -2727,7 +2777,7 @@ class PublicDashboard:
                 df_copy = df_copy[df_copy['Year Sold'].isin(selected_years)]
             
             if selected_language and selected_language != "all":
-                df_copy = df_copy[df_copy['Language'] == selected_language]
+                df_copy = filter_by_language(df_copy, selected_language)
             
             df_copy['Authors_Normalized'] = df_copy['Authors_Exploded'].apply(
                 lambda x: normalize_author_name(x)
@@ -2767,7 +2817,7 @@ class PublicDashboard:
                 df_copy = df_copy[df_copy['Year Sold'].isin(selected_years)]
             
             if selected_language and selected_language != "all":
-                df_copy = df_copy[df_copy['Language'] == selected_language]
+                df_copy = filter_by_language(df_copy, selected_language)
             
             df_copy['Authors_Normalized'] = df_copy['Authors_Exploded'].apply(
                 lambda x: normalize_author_name(x)
@@ -2817,7 +2867,7 @@ class PublicDashboard:
                 df_copy = df_copy[df_copy['Year Sold'].isin(selected_years)]
             
             if selected_language and selected_language != "all":
-                df_copy = df_copy[df_copy['Language'] == selected_language]
+                df_copy = filter_by_language(df_copy, selected_language)
             
             df_copy['Authors_Normalized'] = df_copy['Authors_Exploded'].apply(
                 lambda x: normalize_author_name(x)
@@ -2866,7 +2916,7 @@ class PublicDashboard:
                 df_copy = df_copy[df_copy['Year Sold'].isin(selected_years)]
             
             if selected_language and selected_language != "all":
-                df_copy = df_copy[df_copy['Language'] == selected_language]
+                df_copy = filter_by_language(df_copy, selected_language)
             
             df_copy['Authors_Normalized'] = df_copy['Authors_Exploded'].apply(
                 lambda x: normalize_author_name(x)
@@ -4109,7 +4159,7 @@ class PublicDashboard:
         if selected_language and selected_language != "all":
             preview_items = [
                 item for item in preview_items
-                if item.get("language", "").lower() == selected_language.lower()
+                if matches_language_filter(item.get("language", ""), selected_language)
             ]
         if selected_category and selected_category != "all":
             preview_items = [
@@ -4165,7 +4215,11 @@ class PublicDashboard:
         
         # Apply language filter if selected
         if selected_language and selected_language != "all":
-            lang_filtered = filtered_books[filtered_books['language_name'].str.lower() == selected_language.lower()]
+            lang_filtered = filtered_books[
+                filtered_books['language_name'].apply(
+                    lambda value: matches_language_filter(value, selected_language)
+                )
+            ]
             if len(lang_filtered) > 0:
                 filtered_books = lang_filtered
         

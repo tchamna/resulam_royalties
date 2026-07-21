@@ -163,6 +163,9 @@ DASHBOARD_CONFIG = {
     'conversion_rate_xaf': 500  # USD to XAF conversion rate
 }
 
+# Languages that match any specific language filter (multi-language / universal content)
+UNIVERSAL_LANGUAGE_VALUES = frozenset({"Polyglot", "All"})
+
 # Visualization settings
 VIZ_CONFIG = {
     'template': 'plotly_white',
