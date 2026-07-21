@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import json
+import re
 from io import BytesIO
 from pathlib import Path
 
 import qrcode
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 from playwright.sync_api import sync_playwright
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -69,7 +71,8 @@ VIEWPORT = {"width": 1280, "height": 900}
 SCREENSHOT_HEIGHT = 760
 QR_SIZE = 220
 QR_PADDING = 14
-QR_Y_RATIO = 0.52
+TOP_PROMO_CROP = 38
+PRICE_PATTERN = re.compile(r"[$€£¥₹]|%\s*off|coupon|discount", re.IGNORECASE)
 
 
 def dismiss_overlays(page) -> None:
@@ -95,84 +98,71 @@ def is_cloudflare_block(page) -> bool:
     return "Performing security verification" in content or "Verify you are human" in content
 
 
-def capture_course_screenshot(page, url: str) -> Image.Image:
-    page.goto("https://www.udemy.com/", wait_until="domcontentloaded", timeout=60000)
-    page.wait_for_timeout(2000)
-    page.goto(url, wait_until="domcontentloaded", timeout=60000)
-    try:
-        page.wait_for_load_state("networkidle", timeout=15000)
-    except Exception:
-        pass
+def capture_course_screenshot(page, course: dict) -> tuple[Image.Image, dict]:
+    """Capture one genuine Udemy page from an already-running normal Chrome session."""
+    response = page.goto(course["url"], wait_until="domcontentloaded", timeout=60000)
+    expected_title = course["title"]
+    actual_title = ""
+    for _ in range(18):
+        page.wait_for_timeout(2500)
+        actual_title = page.locator("h1").first.inner_text() if page.locator("h1").count() else ""
+        if actual_title == expected_title and page.title() != "Just a moment...":
+            break
+    else:
+        status = response.status if response else "unknown"
+        raise RuntimeError(
+            f"{course['slug']}: direct Udemy page did not become ready "
+            f"(status={status}, page_title={page.title()!r}, h1={actual_title!r})"
+        )
+
     dismiss_overlays(page)
-    page.wait_for_timeout(2500)
+    page.evaluate("window.scrollTo(0, 0)")
+    page.wait_for_timeout(5000)
     if is_cloudflare_block(page):
         raise RuntimeError("Cloudflare verification page detected")
-    png_bytes = page.screenshot(full_page=False, clip={"x": 0, "y": 0, "width": VIEWPORT["width"], "height": SCREENSHOT_HEIGHT})
-    return Image.open(BytesIO(png_bytes)).convert("RGB")
 
+    preview_box = None
+    preview_candidates = page.get_by_text("Preview this course", exact=True)
+    for index in range(preview_candidates.count()):
+        candidate = preview_candidates.nth(index)
+        if candidate.is_visible():
+            preview_box = candidate.bounding_box()
+            break
+    if not preview_box:
+        raise RuntimeError(f"{course['slug']}: genuine course preview is not visible")
 
-def render_fallback_screenshot(page, course: dict) -> Image.Image:
-    html = f"""<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    body {{ margin: 0; font-family: "Udemy Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #fff; color: #1c1d1f; }}
-    .topbar {{ display:flex; align-items:center; gap:16px; padding: 12px 24px; border-bottom: 1px solid #d1d7dc; }}
-    .logo {{ font-weight: 800; font-size: 22px; letter-spacing: -1px; }}
-    .search {{ flex:1; border:1px solid #1c1d1f; border-radius:999px; padding: 10px 16px; color:#6a6f73; }}
-    .nav {{ display:flex; gap:16px; color:#1c1d1f; font-size:14px; }}
-    .banner {{ position: relative; background: #1c1d1f; color: #fff; padding: 24px 32px 120px; min-height: 420px; }}
-    .crumb {{ color: #c0c4fc; font-size: 14px; margin-bottom: 12px; }}
-    h1 {{ font-size: 32px; line-height: 1.2; margin: 0 0 8px; max-width: 700px; }}
-    .subtitle {{ color: #d1d7dc; margin-bottom: 16px; font-size: 18px; }}
-    .meta {{ color: #d1d7dc; font-size: 14px; }}
-    .card {{ position: absolute; top: 24px; right: 32px; width: 340px; background: #fff; border: 1px solid #d1d7dc; box-shadow: 0 2px 4px rgba(0,0,0,.08), 0 4px 12px rgba(0,0,0,.08); }}
-    .preview {{ height: 190px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; }}
-    .card-body {{ padding: 24px; }}
-    .btn {{ display:block; width:100%; padding: 12px; text-align:center; border-radius: 0; font-weight:700; margin-bottom: 12px; box-sizing:border-box; }}
-    .btn-primary {{ background:#a435f0; color:#fff; border:none; }}
-    .btn-outline {{ background:#fff; color:#a435f0; border:1px solid #a435f0; }}
-    .learn {{ margin: -80px 32px 0; border: 1px solid #d1d7dc; padding: 24px; max-width: 760px; background:#fff; position:relative; z-index:1; }}
-    .learn h2 {{ margin-top: 0; font-size: 24px; }}
-    .grid {{ display:grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; }}
-    .item {{ display:flex; gap:8px; font-size: 14px; align-items:flex-start; }}
-  </style>
-</head>
-<body>
-  <div class="topbar">
-    <div class="logo">udemy</div>
-    <div class="search">Search for anything</div>
-    <div class="nav"><span>Plans &amp; Pricing</span><span>Udemy Business</span><span>Log in</span></div>
-  </div>
-  <div class="banner">
-    <div class="crumb">Teaching &amp; Academics &gt; Language Learning</div>
-    <h1>{course["title"]}</h1>
-    <div class="subtitle">{course["subtitle"]}</div>
-    <div class="meta">Created by <u>Shck Tchamna</u> · Last updated 1/2026 · English</div>
-    <div class="card">
-      <div class="preview">Preview this course</div>
-      <div class="card-body">
-        <button class="btn btn-primary">Add to cart</button>
-        <button class="btn btn-outline">Buy now</button>
-      </div>
-    </div>
-  </div>
-  <div class="learn">
-    <h2>What you'll learn</h2>
-    <div class="grid">
-      <div class="item">✓ 2000+ Well curated phrases subdivided by themes</div>
-      <div class="item">✓ 32 Chapters</div>
-      <div class="item">✓ 8+ hours of Lecture</div>
-      <div class="item">✓ The course focuses on sentences curated to start conversation.</div>
-    </div>
-  </div>
-</body>
-</html>"""
-    page.set_content(html, wait_until="load")
-    page.wait_for_timeout(500)
+    price_nodes = page.evaluate(
+        """() => Array.from(document.querySelectorAll('body *')).map(el => {
+            const rect = el.getBoundingClientRect();
+            const ownText = Array.from(el.childNodes)
+                .filter(node => node.nodeType === Node.TEXT_NODE)
+                .map(node => node.textContent)
+                .join(' ')
+                .trim();
+            return {
+                text: ownText,
+                x: rect.x,
+                y: rect.y,
+                width: rect.width,
+                height: rect.height,
+                visible: Boolean(rect.width && rect.height),
+            };
+        }).filter(item =>
+            item.visible
+            && /[$€£¥₹]|%\\s*off|coupon|discount/i.test(item.text)
+            && item.y < 760
+        )"""
+    )
     png_bytes = page.screenshot(full_page=False, clip={"x": 0, "y": 0, "width": VIEWPORT["width"], "height": SCREENSHOT_HEIGHT})
-    return Image.open(BytesIO(png_bytes)).convert("RGB")
+    screenshot = Image.open(BytesIO(png_bytes)).convert("RGB")
+    return screenshot, {
+        "slug": course["slug"],
+        "source_url": course["url"],
+        "final_url": page.url,
+        "h1": actual_title,
+        "preview_box": preview_box,
+        "price_nodes": price_nodes,
+    }
 
 
 def make_qr_overlay(url: str, size: int, padding: int) -> Image.Image:
@@ -193,62 +183,96 @@ def make_qr_overlay(url: str, size: int, padding: int) -> Image.Image:
     return canvas
 
 
-def overlay_qr(screenshot: Image.Image, qr_overlay: Image.Image) -> Image.Image:
-    result = screenshot.copy()
-    x = (result.width - qr_overlay.width) // 2
-    y = int(result.height * QR_Y_RATIO) - qr_overlay.height // 2
+def compose_price_safe_cover(
+    screenshot: Image.Image,
+    qr_overlay: Image.Image,
+    metadata: dict,
+) -> Image.Image:
+    """Crop the promotional banner and replace only the pricing panel below the preview."""
+    preview = metadata["preview_box"]
+    panel = {
+        "x": float(preview["x"]),
+        "y": float(preview["y"]) + float(preview["height"]),
+        "width": float(preview["width"]),
+        "height": SCREENSHOT_HEIGHT - (float(preview["y"]) + float(preview["height"])),
+    }
 
-    shadow = Image.new("RGBA", (qr_overlay.width + 8, qr_overlay.height + 8), (0, 0, 0, 0))
-    shadow_draw = ImageDraw.Draw(shadow)
-    shadow_draw.rounded_rectangle(
-        (4, 4, qr_overlay.width + 4, qr_overlay.height + 4),
-        radius=8,
-        fill=(0, 0, 0, 60),
+    for node in metadata["price_nodes"]:
+        if not PRICE_PATTERN.search(str(node["text"])):
+            continue
+        node_right = float(node["x"]) + float(node["width"])
+        node_bottom = float(node["y"]) + float(node["height"])
+        removed_by_crop = node_bottom <= TOP_PROMO_CROP
+        removed_by_panel = (
+            float(node["x"]) >= panel["x"]
+            and float(node["y"]) >= panel["y"]
+            and node_right <= panel["x"] + panel["width"]
+        )
+        if not (removed_by_crop or removed_by_panel):
+            raise RuntimeError(
+                f"{metadata['slug']}: detected price text lies outside the redacted regions: "
+                f"{node['text']!r} at ({node['x']}, {node['y']})"
+            )
+
+    result = Image.new("RGB", screenshot.size, "white")
+    visible_page = screenshot.crop((0, TOP_PROMO_CROP, screenshot.width, screenshot.height))
+    result.paste(visible_page, (0, 0))
+
+    panel_left = round(panel["x"])
+    panel_top = round(panel["y"] - TOP_PROMO_CROP)
+    panel_right = round(panel["x"] + panel["width"])
+    draw = ImageDraw.Draw(result)
+    draw.rectangle(
+        (panel_left, panel_top, panel_right, result.height),
+        fill="#ffffff",
+        outline="#d1d7dc",
+        width=2,
     )
-    result.paste(shadow, (x - 4, y), shadow)
 
-    result.paste(qr_overlay, (x, y))
+    label = "SCAN TO OPEN COURSE"
+    try:
+        font = ImageFont.truetype("arialbd.ttf", 18)
+    except OSError:
+        font = ImageFont.load_default()
+    label_box = draw.textbbox((0, 0), label, font=font)
+    label_width = label_box[2] - label_box[0]
+    label_x = panel_left + (panel_right - panel_left - label_width) // 2
+    label_y = panel_top + 22
+    draw.text((label_x, label_y), label, fill="#1c1d1f", font=font)
+
+    qr_x = panel_left + (panel_right - panel_left - qr_overlay.width) // 2
+    qr_y = label_y + 32
+    result.paste(qr_overlay, (qr_x, qr_y))
     return result
 
 
-def generate_cover(playwright, course: dict, output_dir: Path) -> Path:
-    screenshot = None
-    last_error = None
-    for attempt in range(3):
-        browser = playwright.chromium.launch(headless=True)
-        context = browser.new_context(
-            viewport=VIEWPORT,
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/122.0.0.0 Safari/537.36"
-            ),
+def validate_qr(output_path: Path, expected_url: str) -> str:
+    try:
+        import cv2
+    except ImportError as exc:
+        raise RuntimeError(
+            "QR validation requires opencv-python (use a version compatible with this project's NumPy pin)"
+        ) from exc
+    decoded, _, _ = cv2.QRCodeDetector().detectAndDecode(cv2.imread(str(output_path)))
+    if decoded != expected_url:
+        raise RuntimeError(
+            f"{output_path.name}: QR decoded as {decoded!r}, expected {expected_url!r}"
         )
-        page = context.new_page()
-        try:
-            screenshot = capture_course_screenshot(page, course["url"])
-            break
-        except Exception as exc:
-            last_error = exc
-            page.wait_for_timeout(4000 * (attempt + 1))
-        finally:
-            browser.close()
+    return decoded
 
-    if screenshot is None:
-        print(f"Warning: live Udemy capture failed for {course['slug']} ({last_error}); using styled fallback.")
-        browser = playwright.chromium.launch(headless=True)
-        context = browser.new_context(viewport=VIEWPORT)
-        page = context.new_page()
-        screenshot = render_fallback_screenshot(page, course)
-        browser.close()
 
+def generate_cover(page, course: dict, output_dir: Path) -> tuple[Path, dict]:
+    screenshot, metadata = capture_course_screenshot(page, course)
     qr_overlay = make_qr_overlay(course["url"], QR_SIZE, QR_PADDING)
-    final = overlay_qr(screenshot, qr_overlay)
+    final = compose_price_safe_cover(screenshot, qr_overlay, metadata)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / course["filename"]
     final.save(output_path, "PNG", optimize=True)
-    return output_path
+    metadata["qr_url"] = validate_qr(output_path, course["url"])
+    metadata["dimensions"] = list(final.size)
+    metadata["price_regions_removed"] = len(metadata["price_nodes"])
+    return output_path, metadata
 
 
 def main() -> None:
@@ -264,6 +288,19 @@ def main() -> None:
         default=OUTPUT_DIR,
         help="Directory for generated PNG files.",
     )
+    parser.add_argument(
+        "--cdp-url",
+        default="http://127.0.0.1:9222",
+        help=(
+            "DevTools endpoint for an already-running, normal installed browser. "
+            "The script never launches an automated browser or creates fallback pages."
+        ),
+    )
+    parser.add_argument(
+        "--metadata-output",
+        type=Path,
+        help="Optional JSON path for direct-capture and validation evidence.",
+    )
     args = parser.parse_args()
 
     selected = COURSES
@@ -274,10 +311,38 @@ def main() -> None:
         if missing:
             raise SystemExit(f"Unknown slug(s): {', '.join(sorted(missing))}")
 
+    capture_results = []
     with sync_playwright() as playwright:
-        for course in selected:
-            output_path = generate_cover(playwright, course, args.output_dir)
-            print(f"Saved {output_path}")
+        try:
+            browser = playwright.chromium.connect_over_cdp(args.cdp_url)
+        except Exception as exc:
+            raise SystemExit(
+                "Could not connect to a normal installed browser. Start Chrome or Edge "
+                "in headed mode with a dedicated profile and --remote-debugging-port=9222. "
+                "No synthetic fallback is available."
+            ) from exc
+        contexts = browser.contexts
+        if not contexts:
+            raise SystemExit("The connected browser has no normal browsing context.")
+        pages = contexts[0].pages
+        page = pages[0] if pages else contexts[0].new_page()
+        page.set_viewport_size(VIEWPORT)
+        for index, course in enumerate(selected):
+            output_path, metadata = generate_cover(page, course, args.output_dir)
+            capture_results.append(metadata)
+            print(
+                f"Saved {output_path}: direct H1={metadata['h1']!r}, "
+                f"QR verified, {metadata['price_regions_removed']} price regions removed"
+            )
+            if index < len(selected) - 1:
+                page.wait_for_timeout(9000)
+
+    if args.metadata_output:
+        args.metadata_output.parent.mkdir(parents=True, exist_ok=True)
+        args.metadata_output.write_text(
+            json.dumps(capture_results, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
 
 if __name__ == "__main__":
