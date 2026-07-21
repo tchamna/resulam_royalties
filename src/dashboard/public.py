@@ -24,6 +24,8 @@ from ..config import (
     BOOKS_DATABASE_PATH,
     RESOURCES_DATABASE_PATH,
     UNIVERSAL_LANGUAGE_VALUES,
+    LANGUAGE_FILTERED_RESOURCE_CATEGORIES,
+    LANGUAGE_RESOURCE_NAME_ALIASES,
 )
 from ..visualization import SalesCharts, AuthorCharts, GeographicCharts, SummaryMetrics
 from ..visualization.earning_history import EarningHistoryCharts
@@ -123,6 +125,28 @@ def filter_by_language(
     if not selected_language or selected_language == "all":
         return df
     return df[df[column].apply(lambda value: matches_language_filter(value, selected_language))]
+
+
+def _resource_name_matches_language_aliases(item: dict, selected_language: str) -> bool:
+    """Match resource items by configured name patterns when language metadata is missing."""
+    aliases = LANGUAGE_RESOURCE_NAME_ALIASES.get(selected_language)
+    if not aliases:
+        return False
+
+    searchable = " ".join(
+        str(item.get(field, "") or "")
+        for field in ("name", "description", "category")
+    ).casefold()
+    return any(alias.casefold() in searchable for alias in aliases)
+
+
+def matches_resource_item_filter(item: dict, selected_language: str) -> bool:
+    """Return True when a non-book resource should appear for the selected language."""
+    if not selected_language or selected_language == "all":
+        return True
+    if matches_language_filter(item.get("language", ""), selected_language):
+        return True
+    return _resource_name_matches_language_aliases(item, selected_language)
 
 
 def filter_by_author(df: pd.DataFrame, selected_author: str, authors_column: str = 'Authors') -> pd.DataFrame:
@@ -4148,19 +4172,33 @@ class PublicDashboard:
             *sections,
         ], fluid=True)
 
-    def _get_resource_preview_items(self):
+    def _get_resource_preview_items(self, selected_language=None):
         """Return non-book resources shown in the purchase grid."""
-        return self._load_resource_items(purchase_only=True)
+        purchase_items = self._load_resource_items(purchase_only=True)
+        if selected_language and selected_language != "all":
+            purchase_items = [
+                item for item in purchase_items
+                if matches_resource_item_filter(item, selected_language)
+            ]
+        else:
+            return purchase_items
+
+        seen_names = {item["name"] for item in purchase_items if item.get("name")}
+        preview_items = list(purchase_items)
+        for item in self._load_resource_items(purchase_only=False):
+            name = item.get("name")
+            if not name or name in seen_names:
+                continue
+            if item.get("category") not in LANGUAGE_FILTERED_RESOURCE_CATEGORIES:
+                continue
+            if matches_resource_item_filter(item, selected_language):
+                preview_items.append(item)
+                seen_names.add(name)
+        return preview_items
 
     def _build_resource_preview_entries(self, selected_language=None, selected_category=None):
         """Build dated non-book resource entries that share the book grid layout."""
-        preview_items = self._get_resource_preview_items()
-
-        if selected_language and selected_language != "all":
-            preview_items = [
-                item for item in preview_items
-                if matches_language_filter(item.get("language", ""), selected_language)
-            ]
+        preview_items = self._get_resource_preview_items(selected_language)
         if selected_category and selected_category != "all":
             preview_items = [
                 item for item in preview_items

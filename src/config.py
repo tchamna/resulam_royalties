@@ -166,6 +166,22 @@ DASHBOARD_CONFIG = {
 # Languages that match any specific language filter (multi-language / universal content)
 UNIVERSAL_LANGUAGE_VALUES = frozenset({"Polyglot", "All"})
 
+# Non-book resource categories surfaced on the purchase tab when a language is filtered
+LANGUAGE_FILTERED_RESOURCE_CATEGORIES = frozenset({"Applications & Resources"})
+
+# Extra name/title patterns for language-specific apps (safety net if language column is blank)
+LANGUAGE_RESOURCE_NAME_ALIASES = {
+    "Nufi": (
+        "nufi",
+        "feefe",
+        "fe'efe",
+        "dictionnaire nufi",
+        "nufi dictionary",
+        "nufi conjug",
+        "conjugator",
+    ),
+}
+
 # Visualization settings
 VIZ_CONFIG = {
     'template': 'plotly_white',
