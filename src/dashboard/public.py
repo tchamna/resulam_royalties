@@ -5,7 +5,8 @@ import dash
 import os
 import re
 from urllib.parse import parse_qs, urlencode, quote
-from dash import html, dcc, Input, Output, State
+
+from dash import html, dcc, Input, Output, State, ClientsideFunction
 import dash_bootstrap_components as dbc
 from typing import Dict, List
 from pathlib import Path
@@ -1391,8 +1392,104 @@ class PublicDashboard:
             "chart_modes": chart_modes,
         }
     
+    def _register_url_callbacks(self):
+        """Sync dashboard filters/tabs with URL query params for shareable views."""
+
+        @self.app.callback(
+            Output("year-filter", "value"),
+            Output("language-filter", "value"),
+            Output("author-filter", "value"),
+            Output("booktype-filter", "value"),
+            Output("book-filter", "value"),
+            Output("category-filter", "value"),
+            Output("dashboard-tabs", "active_tab"),
+            Output("sales-language-display-mode", "value"),
+            Output("url", "search"),
+            Output("url-sync-flag", "data"),
+            Input("reset-all-filters", "n_clicks"),
+            prevent_initial_call=True,
+        )
+        def reset_all_filters(n_clicks):
+            """Reset all filters to their default values and clear the URL."""
+            return (
+                "lifetime", "all", "all", "all", "all", "all",
+                DEFAULT_DASHBOARD_TAB, DEFAULT_CHART_DISPLAY,
+                "", "from_filters",
+            )
+
+        @self.app.callback(
+            Output("year-filter", "value", allow_duplicate=True),
+            Output("language-filter", "value", allow_duplicate=True),
+            Output("author-filter", "value", allow_duplicate=True),
+            Output("booktype-filter", "value", allow_duplicate=True),
+            Output("book-filter", "value", allow_duplicate=True),
+            Output("category-filter", "value", allow_duplicate=True),
+            Output("dashboard-tabs", "active_tab", allow_duplicate=True),
+            Output("sales-language-display-mode", "value", allow_duplicate=True),
+            Output("url-sync-flag", "data", allow_duplicate=True),
+            Input("url", "search"),
+            State("year-filter", "value"),
+            State("language-filter", "value"),
+            State("author-filter", "value"),
+            State("booktype-filter", "value"),
+            State("book-filter", "value"),
+            State("category-filter", "value"),
+            State("dashboard-tabs", "active_tab"),
+            State("sales-language-display-mode", "value"),
+            State("url-sync-flag", "data"),
+            prevent_initial_call="initial_duplicate",
+        )
+        def apply_url_to_filters(
+            search,
+            year,
+            lang,
+            author,
+            booktype,
+            book,
+            category,
+            tab,
+            chart,
+            sync_flag,
+        ):
+            """Apply bookmarked URL query params to dashboard filters."""
+            if sync_flag == "from_filters":
+                return (
+                    dash.no_update, dash.no_update, dash.no_update, dash.no_update,
+                    dash.no_update, dash.no_update, dash.no_update, dash.no_update,
+                    None,
+                )
+
+            parsed = parse_filter_search_string(search, self._get_url_filter_context())
+            return (
+                parsed["year"] if parsed["year"] != year else dash.no_update,
+                parsed["lang"] if parsed["lang"] != lang else dash.no_update,
+                parsed["author"] if parsed["author"] != author else dash.no_update,
+                parsed["booktype"] if parsed["booktype"] != booktype else dash.no_update,
+                parsed["book"] if parsed["book"] != book else dash.no_update,
+                parsed["category"] if parsed["category"] != category else dash.no_update,
+                parsed["tab"] if parsed["tab"] != tab else dash.no_update,
+                parsed["chart"] if parsed["chart"] != chart else dash.no_update,
+                None,
+            )
+
+        self.app.clientside_callback(
+            ClientsideFunction(namespace="url_sync", function_name="filters_to_search"),
+            Output("url", "search", allow_duplicate=True),
+            Input("year-filter", "value"),
+            Input("language-filter", "value"),
+            Input("category-filter", "value"),
+            Input("book-filter", "value"),
+            Input("author-filter", "value"),
+            Input("booktype-filter", "value"),
+            Input("dashboard-tabs", "active_tab"),
+            Input("sales-language-display-mode", "value"),
+            State("url", "search"),
+            prevent_initial_call=True,
+        )
+
     def _register_callbacks(self):
         """Register all dashboard callbacks"""
+        self._register_url_callbacks()
 
         @self.app.callback(
             Output("device-warning-banner", "is_open"),
@@ -1893,116 +1990,6 @@ class PublicDashboard:
             return [{"label": f"All Categories ({len(available_categories)})", "value": "all"}] + [
                 {"label": category_label_overrides.get(cat, cat), "value": cat} for cat in available_categories
             ]
-
-        @self.app.callback(
-            Output("year-filter", "value"),
-            Output("language-filter", "value"),
-            Output("author-filter", "value"),
-            Output("booktype-filter", "value"),
-            Output("book-filter", "value"),
-            Output("category-filter", "value"),
-            Output("dashboard-tabs", "active_tab"),
-            Output("sales-language-display-mode", "value"),
-            Output("url", "search"),
-            Output("url-sync-flag", "data"),
-            Input("reset-all-filters", "n_clicks"),
-            prevent_initial_call=True
-        )
-        def reset_all_filters(n_clicks):
-            """Reset all filters to their default values and clear the URL."""
-            return (
-                "lifetime", "all", "all", "all", "all", "all",
-                DEFAULT_DASHBOARD_TAB, DEFAULT_CHART_DISPLAY,
-                "", "from_filters",
-            )
-
-        @self.app.callback(
-            Output("year-filter", "value", allow_duplicate=True),
-            Output("language-filter", "value", allow_duplicate=True),
-            Output("author-filter", "value", allow_duplicate=True),
-            Output("booktype-filter", "value", allow_duplicate=True),
-            Output("book-filter", "value", allow_duplicate=True),
-            Output("category-filter", "value", allow_duplicate=True),
-            Output("dashboard-tabs", "active_tab", allow_duplicate=True),
-            Output("sales-language-display-mode", "value", allow_duplicate=True),
-            Output("url-sync-flag", "data", allow_duplicate=True),
-            Input("url", "search"),
-            State("year-filter", "value"),
-            State("language-filter", "value"),
-            State("author-filter", "value"),
-            State("booktype-filter", "value"),
-            State("book-filter", "value"),
-            State("category-filter", "value"),
-            State("dashboard-tabs", "active_tab"),
-            State("sales-language-display-mode", "value"),
-            State("url-sync-flag", "data"),
-            prevent_initial_call="initial_duplicate",
-        )
-        def apply_url_to_filters(
-            search,
-            year,
-            lang,
-            author,
-            booktype,
-            book,
-            category,
-            tab,
-            chart,
-            sync_flag,
-        ):
-            """Apply bookmarked URL query params to dashboard filters."""
-            if sync_flag == "from_filters":
-                return (
-                    dash.no_update, dash.no_update, dash.no_update, dash.no_update,
-                    dash.no_update, dash.no_update, dash.no_update, dash.no_update,
-                    None,
-                )
-
-            parsed = parse_filter_search_string(search, self._get_url_filter_context())
-            return (
-                parsed["year"] if parsed["year"] != year else dash.no_update,
-                parsed["lang"] if parsed["lang"] != lang else dash.no_update,
-                parsed["author"] if parsed["author"] != author else dash.no_update,
-                parsed["booktype"] if parsed["booktype"] != booktype else dash.no_update,
-                parsed["book"] if parsed["book"] != book else dash.no_update,
-                parsed["category"] if parsed["category"] != category else dash.no_update,
-                parsed["tab"] if parsed["tab"] != tab else dash.no_update,
-                parsed["chart"] if parsed["chart"] != chart else dash.no_update,
-                None,
-            )
-
-        @self.app.callback(
-            Output("url", "search", allow_duplicate=True),
-            Output("url-sync-flag", "data", allow_duplicate=True),
-            Input("year-filter", "value"),
-            Input("language-filter", "value"),
-            Input("author-filter", "value"),
-            Input("booktype-filter", "value"),
-            Input("book-filter", "value"),
-            Input("category-filter", "value"),
-            Input("dashboard-tabs", "active_tab"),
-            Input("sales-language-display-mode", "value"),
-            State("url", "search"),
-            prevent_initial_call=True,
-        )
-        def apply_filters_to_url(
-            year,
-            lang,
-            author,
-            booktype,
-            book,
-            category,
-            tab,
-            chart,
-            current_search,
-        ):
-            """Keep the URL in sync when filters, tab, or chart change."""
-            new_search = build_filter_search_string(
-                year, lang, category, book, author, booktype, tab, chart
-            )
-            if _normalize_url_search(current_search) == new_search:
-                raise dash.exceptions.PreventUpdate
-            return new_search, "from_filters"
 
         @self.app.callback(
             Output("year-filter", "options"),

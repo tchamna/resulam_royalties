@@ -2,6 +2,58 @@
 //
 // Smooth-scroll to the tab content on small screens even when the user taps
 // the already-active tab (Dash callbacks don't fire if active_tab doesn't change).
+window.dash_clientside = Object.assign({}, window.dash_clientside, {
+  url_sync: {
+    filters_to_search: function (
+      year,
+      lang,
+      category,
+      book,
+      author,
+      bookType,
+      tab,
+      chart,
+      currentSearch
+    ) {
+      var params = new URLSearchParams();
+
+      if (year && year !== "lifetime") {
+        params.set("year", String(year));
+      }
+      if (lang && lang !== "all") {
+        params.set("lang", lang);
+      }
+      if (category && category !== "all") {
+        params.set("category", category);
+      }
+      if (book && book !== "all") {
+        params.set("book", book);
+      }
+      if (author && author !== "all") {
+        params.set("author", author);
+      }
+      if (bookType && bookType !== "all") {
+        params.set("type", bookType);
+      }
+      if (tab && tab !== "purchase") {
+        params.set("tab", tab);
+      }
+      if (chart && chart !== "all_stacked") {
+        params.set("chart", chart);
+      }
+
+      var query = params.toString();
+      var newSearch = query ? "?" + query : "";
+      var normalizedCurrent = currentSearch || "";
+
+      if (newSearch === normalizedCurrent) {
+        return window.dash_clientside.no_update;
+      }
+      return newSearch;
+    },
+  },
+});
+
 (function () {
   function isSmallScreen() {
     try {
