@@ -178,7 +178,6 @@ LANGUAGE_RESOURCE_NAME_ALIASES = {
         "dictionnaire nufi",
         "nufi dictionary",
         "nufi conjug",
-        "conjugator",
     ),
 }
 

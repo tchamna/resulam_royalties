@@ -110,10 +110,11 @@ def matches_language_filter(language, selected_language: str) -> bool:
     row_language = _normalize_language_value(language)
     if not row_language:
         return False
-    if row_language == selected_language:
+    selected_normalized = _normalize_language_value(selected_language)
+    if row_language.casefold() == selected_normalized.casefold():
         return True
 
-    selected_is_universal = selected_language.casefold() in _UNIVERSAL_LANGUAGE_LOOKUP
+    selected_is_universal = selected_normalized.casefold() in _UNIVERSAL_LANGUAGE_LOOKUP
     return not selected_is_universal and is_universal_language(row_language)
 
 
@@ -141,13 +142,91 @@ def _resource_name_matches_language_aliases(item: dict, selected_language: str) 
     return any(alias.casefold() in searchable for alias in aliases)
 
 
-def matches_resource_item_filter(item: dict, selected_language: str) -> bool:
-    """Return True when a non-book resource should appear for the selected language."""
-    if not selected_language or selected_language == "all":
-        return True
-    if matches_language_filter(item.get("language", ""), selected_language):
-        return True
-    return _resource_name_matches_language_aliases(item, selected_language)
+def matches_resource_item_filter(
+    item: dict,
+    selected_language: str,
+    selected_category: str = None,
+) -> bool:
+    """Return True when a resource matches the selected language and category."""
+    return matches_resource_filters(
+        item,
+        selected_language=selected_language,
+        selected_category=selected_category,
+    )
+
+
+def _resource_values(value) -> list:
+    """Normalize scalar or multi-valued resource metadata into trimmed values."""
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [str(part).strip() for part in value if str(part).strip()]
+    text = str(value).strip()
+    if not text:
+        return []
+    separator = ";" if ";" in text else ("|" if "|" in text else None)
+    return [part.strip() for part in text.split(separator) if part.strip()] if separator else [text]
+
+
+def _same_filter_value(left, right) -> bool:
+    return str(left or "").strip().casefold() == str(right or "").strip().casefold()
+
+
+def _active_filter(value) -> bool:
+    return value is not None and str(value).strip().casefold() not in {"", "all", "lifetime"}
+
+
+def matches_resource_filters(
+    item: dict,
+    selected_years=None,
+    selected_language=None,
+    selected_author=None,
+    selected_booktype=None,
+    selected_book=None,
+    selected_category=None,
+    ignore=frozenset(),
+) -> bool:
+    """Apply shared dashboard filters to one resource with AND semantics."""
+    if "category" not in ignore and _active_filter(selected_category):
+        if not _same_filter_value(item.get("category"), selected_category):
+            return False
+
+    if "language" not in ignore and _active_filter(selected_language):
+        languages = _resource_values(item.get("languages") or item.get("language"))
+        if not any(matches_language_filter(language, selected_language) for language in languages):
+            if not _resource_name_matches_language_aliases(item, selected_language):
+                return False
+
+    if "author" not in ignore and _active_filter(selected_author):
+        selected_normalized = normalize_author_name(str(selected_author).strip()).casefold()
+        authors = {
+            normalize_author_name(author).casefold()
+            for author in _resource_values(item.get("authors"))
+        }
+        if selected_normalized not in authors:
+            return False
+
+    if "booktype" not in ignore and _active_filter(selected_booktype):
+        if not any(
+            _same_filter_value(value, selected_booktype)
+            for value in _resource_values(item.get("book_types"))
+        ):
+            return False
+
+    if "book" not in ignore and _active_filter(selected_book):
+        if not any(
+            _same_filter_value(value, selected_book)
+            for value in _resource_values(item.get("books"))
+        ):
+            return False
+
+    if "year" not in ignore and selected_years and selected_years != "lifetime":
+        wanted_years = selected_years if isinstance(selected_years, (list, tuple, set)) else [selected_years]
+        publication_date = pd.to_datetime(item.get("publication_date"), errors="coerce")
+        if pd.isna(publication_date) or publication_date.year not in {int(year) for year in wanted_years}:
+            return False
+
+    return True
 
 
 def filter_by_author(df: pd.DataFrame, selected_author: str, authors_column: str = 'Authors') -> pd.DataFrame:
@@ -217,6 +296,15 @@ def _normalize_url_search(search) -> str:
     return search if str(search).startswith("?") else f"?{search}"
 
 
+def _resolve_query_choice(raw_value, choices, normalize=None):
+    """Return the canonical choice matching a decoded query value."""
+    if raw_value is None:
+        return None
+    normalizer = normalize or (lambda value: str(value).strip().casefold())
+    wanted = normalizer(raw_value)
+    return next((choice for choice in choices if normalizer(choice) == wanted), None)
+
+
 def build_filter_search_string(
     year,
     lang,
@@ -269,38 +357,49 @@ def parse_filter_search_string(search, ctx: dict) -> dict:
 
     lang = "all"
     raw_lang = _first_query_value(params, "lang")
-    if raw_lang and raw_lang in ctx["languages"]:
-        lang = raw_lang
+    matched_lang = _resolve_query_choice(raw_lang, ctx["languages"])
+    if matched_lang:
+        lang = matched_lang
 
     category = "all"
     raw_category = _first_query_value(params, "category")
-    if raw_category and raw_category in ctx["categories"]:
-        category = raw_category
+    matched_category = _resolve_query_choice(raw_category, ctx["categories"])
+    if matched_category:
+        category = matched_category
 
     book = "all"
     raw_book = _first_query_value(params, "book")
-    if raw_book and raw_book in ctx["books"]:
-        book = raw_book
+    matched_book = _resolve_query_choice(raw_book, ctx["books"])
+    if matched_book:
+        book = matched_book
 
     author = "all"
     raw_author = _first_query_value(params, "author")
-    if raw_author and raw_author in ctx["authors"]:
-        author = raw_author
+    matched_author = _resolve_query_choice(
+        raw_author,
+        ctx["authors"],
+        lambda value: normalize_author_name(str(value).strip()).casefold(),
+    )
+    if matched_author:
+        author = matched_author
 
     booktype = "all"
     raw_type = _first_query_value(params, "type")
-    if raw_type and raw_type in ctx["book_types"]:
-        booktype = raw_type
+    matched_type = _resolve_query_choice(raw_type, ctx["book_types"])
+    if matched_type:
+        booktype = matched_type
 
     tab = DEFAULT_DASHBOARD_TAB
     raw_tab = _first_query_value(params, "tab")
-    if raw_tab and raw_tab in ctx["tabs"]:
-        tab = raw_tab
+    matched_tab = _resolve_query_choice(raw_tab, ctx["tabs"])
+    if matched_tab:
+        tab = matched_tab
 
     chart = DEFAULT_CHART_DISPLAY
     raw_chart = _first_query_value(params, "chart")
-    if raw_chart and raw_chart in ctx["chart_modes"]:
-        chart = raw_chart
+    matched_chart = _resolve_query_choice(raw_chart, ctx["chart_modes"])
+    if matched_chart:
+        chart = matched_chart
 
     return {
         "year": year,
@@ -1066,8 +1165,25 @@ class PublicDashboard:
             all_categories = sorted(books_df['category'].dropna().unique().tolist())
         except Exception:
             all_categories = []
-        resource_categories = self._get_resource_categories(purchase_only=True)
-        all_categories = sorted(set(all_categories).union(resource_categories))
+        resource_items = self._load_resource_items(purchase_only=False)
+        all_languages = sorted(set(all_languages).union(
+            language
+            for item in resource_items
+            for language in _resource_values(item.get("languages") or item.get("language"))
+            if not is_universal_language(language)
+        ))
+        all_categories = sorted(set(all_categories).union(
+            item["category"] for item in resource_items if item.get("category")
+        ))
+        all_authors_for_filter = sorted(set(all_authors_for_filter).union(
+            author for item in resource_items for author in _resource_values(item.get("authors"))
+        ))
+        all_book_types = sorted(set(all_book_types).union(
+            value for item in resource_items for value in _resource_values(item.get("book_types"))
+        ))
+        all_book_nicknames = sorted(set(all_book_nicknames).union(
+            value for item in resource_items for value in _resource_values(item.get("books"))
+        ))
 
         category_label_overrides = {
             "Phrasebook - Guide de Conversations": "Phrasebooks-Guide de conversation",
@@ -1375,8 +1491,25 @@ class PublicDashboard:
             all_categories = sorted(books_df['category'].dropna().unique().tolist())
         except Exception:
             all_categories = []
-        resource_categories = self._get_resource_categories(purchase_only=True)
-        all_categories = sorted(set(all_categories).union(resource_categories))
+        resource_items = self._load_resource_items(purchase_only=False)
+        all_languages = sorted(set(all_languages).union(
+            language
+            for item in resource_items
+            for language in _resource_values(item.get("languages") or item.get("language"))
+            if not is_universal_language(language)
+        ))
+        all_categories = sorted(set(all_categories).union(
+            item["category"] for item in resource_items if item.get("category")
+        ))
+        all_authors = sorted(set(all_authors).union(
+            author for item in resource_items for author in _resource_values(item.get("authors"))
+        ))
+        all_book_types = sorted(set(all_book_types).union(
+            value for item in resource_items for value in _resource_values(item.get("book_types"))
+        ))
+        all_book_nicknames = sorted(set(all_book_nicknames).union(
+            value for item in resource_items for value in _resource_values(item.get("books"))
+        ))
 
         chart_modes = {"all_stacked", "all_grouped"}
         chart_modes.update(f"language::{lang}" for lang in all_languages)
@@ -1767,9 +1900,11 @@ class PublicDashboard:
             Input("booktype-filter", "value"),
             Input("book-filter", "value"),
             Input("data-refresh-signal", "data"),
+            Input("dashboard-tabs", "active_tab"),
+            State("language-filter", "value"),
             prevent_initial_call=False
         )
-        def update_language_options(selected_year, selected_category, selected_author, selected_booktype, selected_book, refresh_signal):
+        def update_language_options(selected_year, selected_category, selected_author, selected_booktype, selected_book, refresh_signal, active_tab, current_language):
             """Update language filter options based on other filters"""
             # Convert year selection to list for filtering
             if selected_year == "lifetime" or not selected_year:
@@ -1778,6 +1913,26 @@ class PublicDashboard:
                 years = [selected_year]
             else:
                 years = selected_year
+
+            if active_tab == "resources":
+                items = self._get_filtered_resource_items(
+                    selected_years=years,
+                    selected_author=selected_author,
+                    selected_booktype=selected_booktype,
+                    selected_book=selected_book,
+                    selected_category=selected_category,
+                    ignore={"language"},
+                )
+                languages = [
+                    language
+                    for item in items
+                    for language in _resource_values(item.get("languages") or item.get("language"))
+                ]
+                return self._resource_filter_options(
+                    languages,
+                    current_language,
+                    "All Languages",
+                )
             
             df, _ = _get_filtered_data(years, None, selected_author, selected_booktype, selected_book, selected_category)
             available_languages = sort_with_accents([
@@ -1792,10 +1947,13 @@ class PublicDashboard:
         @self.app.callback(
             Output("language-label", "children"),
             Input("year-filter", "value"),
+            Input("dashboard-tabs", "active_tab"),
             prevent_initial_call=False
         )
-        def update_language_label(selected_year):
+        def update_language_label(selected_year, active_tab):
             """Update language label based on selected year"""
+            if active_tab == "resources":
+                return "Languages (Resources):"
             if selected_year == "lifetime" or not selected_year:
                 return "Languages (Lifetime):"
             else:
@@ -1804,10 +1962,13 @@ class PublicDashboard:
         @self.app.callback(
             Output("author-label", "children"),
             Input("year-filter", "value"),
+            Input("dashboard-tabs", "active_tab"),
             prevent_initial_call=False
         )
-        def update_author_label(selected_year):
+        def update_author_label(selected_year, active_tab):
             """Update author label based on selected year"""
+            if active_tab == "resources":
+                return "Authors (Resources):"
             if selected_year == "lifetime" or not selected_year:
                 return "Authors (Lifetime):"
             else:
@@ -1816,10 +1977,13 @@ class PublicDashboard:
         @self.app.callback(
             Output("booktype-label", "children"),
             Input("year-filter", "value"),
+            Input("dashboard-tabs", "active_tab"),
             prevent_initial_call=False
         )
-        def update_booktype_label(selected_year):
+        def update_booktype_label(selected_year, active_tab):
             """Update book type label based on selected year"""
+            if active_tab == "resources":
+                return "Type (Resources):"
             if selected_year == "lifetime" or not selected_year:
                 return "Type (Lifetime):"
             else:
@@ -1828,10 +1992,13 @@ class PublicDashboard:
         @self.app.callback(
             Output("category-label", "children"),
             Input("year-filter", "value"),
+            Input("dashboard-tabs", "active_tab"),
             prevent_initial_call=False
         )
-        def update_category_label(selected_year):
+        def update_category_label(selected_year, active_tab):
             """Update category label based on selected year"""
+            if active_tab == "resources":
+                return "Category (Resources):"
             if selected_year == "lifetime" or not selected_year:
                 return "Category (Lifetime):"
             else:
@@ -1840,10 +2007,13 @@ class PublicDashboard:
         @self.app.callback(
             Output("book-label", "children"),
             Input("year-filter", "value"),
+            Input("dashboard-tabs", "active_tab"),
             prevent_initial_call=False
         )
-        def update_book_label(selected_year):
+        def update_book_label(selected_year, active_tab):
             """Update book label based on selected year"""
+            if active_tab == "resources":
+                return "Books (Resources):"
             if selected_year == "lifetime" or not selected_year:
                 return "Books (Lifetime):"
             else:
@@ -1857,9 +2027,11 @@ class PublicDashboard:
             Input("booktype-filter", "value"),
             Input("book-filter", "value"),
             Input("data-refresh-signal", "data"),
+            Input("dashboard-tabs", "active_tab"),
+            State("author-filter", "value"),
             prevent_initial_call=False
         )
-        def update_author_options(selected_year, selected_category, selected_language, selected_booktype, selected_book, refresh_signal):
+        def update_author_options(selected_year, selected_category, selected_language, selected_booktype, selected_book, refresh_signal, active_tab, current_author):
             """Update author filter options based on other filters"""
             if selected_year == "lifetime" or not selected_year:
                 years = None
@@ -1867,6 +2039,22 @@ class PublicDashboard:
                 years = [selected_year]
             else:
                 years = selected_year
+
+            if active_tab == "resources":
+                items = self._get_filtered_resource_items(
+                    selected_years=years,
+                    selected_language=selected_language,
+                    selected_booktype=selected_booktype,
+                    selected_book=selected_book,
+                    selected_category=selected_category,
+                    ignore={"author"},
+                )
+                authors = [
+                    author
+                    for item in items
+                    for author in _resource_values(item.get("authors"))
+                ]
+                return self._resource_filter_options(authors, current_author, "All Authors")
             
             _, df_exploded = _get_filtered_data(years, selected_language, None, selected_booktype, selected_book, selected_category)
             available_authors = get_unique_authors(df_exploded['Authors_Exploded'])
@@ -1883,9 +2071,11 @@ class PublicDashboard:
             Input("author-filter", "value"),
             Input("book-filter", "value"),
             Input("data-refresh-signal", "data"),
+            Input("dashboard-tabs", "active_tab"),
+            State("booktype-filter", "value"),
             prevent_initial_call=False
         )
-        def update_booktype_options(selected_year, selected_category, selected_language, selected_author, selected_book, refresh_signal):
+        def update_booktype_options(selected_year, selected_category, selected_language, selected_author, selected_book, refresh_signal, active_tab, current_booktype):
             """Update book type filter options based on other filters"""
             if selected_year == "lifetime" or not selected_year:
                 years = None
@@ -1893,11 +2083,32 @@ class PublicDashboard:
                 years = [selected_year]
             else:
                 years = selected_year
+
+            type_labels = {"Ebook": "📱 eBook", "Paper": "📖 Paperback", "HardCover": "📚 Hardcover"}
+            if active_tab == "resources":
+                items = self._get_filtered_resource_items(
+                    selected_years=years,
+                    selected_language=selected_language,
+                    selected_author=selected_author,
+                    selected_book=selected_book,
+                    selected_category=selected_category,
+                    ignore={"booktype"},
+                )
+                book_types = [
+                    value
+                    for item in items
+                    for value in _resource_values(item.get("book_types"))
+                ]
+                return self._resource_filter_options(
+                    book_types,
+                    current_booktype,
+                    "All Types",
+                    type_labels,
+                )
             
             df, _ = _get_filtered_data(years, selected_language, selected_author, None, selected_book, selected_category)
             available_types = sorted(df['BookType'].dropna().unique().tolist())
             
-            type_labels = {"Ebook": "📱 eBook", "Paper": "📖 Paperback", "HardCover": "📚 Hardcover"}
             return [{"label": f"All Types ({len(available_types)})", "value": "all"}] + [
                 {"label": type_labels.get(bt, bt), "value": bt} for bt in available_types
             ]
@@ -1910,9 +2121,11 @@ class PublicDashboard:
             Input("author-filter", "value"),
             Input("booktype-filter", "value"),
             Input("data-refresh-signal", "data"),
+            Input("dashboard-tabs", "active_tab"),
+            State("book-filter", "value"),
             prevent_initial_call=False
         )
-        def update_book_options(selected_year, selected_category, selected_language, selected_author, selected_booktype, refresh_signal):
+        def update_book_options(selected_year, selected_category, selected_language, selected_author, selected_booktype, refresh_signal, active_tab, current_book):
             """Update book filter options based on other filters"""
             if selected_year == "lifetime" or not selected_year:
                 years = None
@@ -1920,6 +2133,22 @@ class PublicDashboard:
                 years = [selected_year]
             else:
                 years = selected_year
+
+            if active_tab == "resources":
+                items = self._get_filtered_resource_items(
+                    selected_years=years,
+                    selected_language=selected_language,
+                    selected_author=selected_author,
+                    selected_booktype=selected_booktype,
+                    selected_category=selected_category,
+                    ignore={"book"},
+                )
+                books = [
+                    value
+                    for item in items
+                    for value in _resource_values(item.get("books"))
+                ]
+                return self._resource_filter_options(books, current_book, "All Books")
             
             df, _ = _get_filtered_data(years, selected_language, selected_author, selected_booktype, None, selected_category)
             available_books = sorted(df['book_nick_name'].dropna().unique().tolist())
@@ -1936,9 +2165,11 @@ class PublicDashboard:
             Input("booktype-filter", "value"),
             Input("book-filter", "value"),
             Input("data-refresh-signal", "data"),
+            Input("dashboard-tabs", "active_tab"),
+            State("category-filter", "value"),
             prevent_initial_call=False
         )
-        def update_category_options(selected_year, selected_language, selected_author, selected_booktype, selected_book, refresh_signal):
+        def update_category_options(selected_year, selected_language, selected_author, selected_booktype, selected_book, refresh_signal, active_tab, current_category):
             """Update category filter options based on other filters"""
             if selected_year == "lifetime" or not selected_year:
                 years = None
@@ -1946,14 +2177,29 @@ class PublicDashboard:
                 years = [selected_year]
             else:
                 years = selected_year
+
+            category_label_overrides = {
+                "Phrasebook - Guide de Conversations": "Phrasebooks-Guide de conversation",
+            }
+            if active_tab == "resources":
+                items = self._get_filtered_resource_items(
+                    selected_years=years,
+                    selected_language=selected_language,
+                    selected_author=selected_author,
+                    selected_booktype=selected_booktype,
+                    selected_book=selected_book,
+                    ignore={"category"},
+                )
+                return self._resource_filter_options(
+                    [item.get("category") for item in items],
+                    current_category,
+                    "All Categories",
+                    category_label_overrides,
+                )
             
             # Get filtered royalties data (without category filter)
             df, _ = _get_filtered_data(years, selected_language, selected_author, selected_booktype, selected_book, None)
             
-            category_label_overrides = {
-                "Phrasebook - Guide de Conversations": "Phrasebooks-Guide de conversation",
-            }
-
             # Map royalties nicknames back to categories from books database.
             # Royalties use short nicknames, while the DB may use long descriptive nicknames.
             # Bridge via DB_NICKNAME_TO_ROYALTY when available.
@@ -1995,14 +2241,52 @@ class PublicDashboard:
             Output("year-filter", "options"),
             Output("sales-language-display-mode", "options"),
             Input("data-refresh-signal", "data"),
-            prevent_initial_call=True
+            Input("dashboard-tabs", "active_tab"),
+            Input("language-filter", "value"),
+            Input("author-filter", "value"),
+            Input("booktype-filter", "value"),
+            Input("book-filter", "value"),
+            Input("category-filter", "value"),
+            State("year-filter", "value"),
+            prevent_initial_call=False
         )
-        def update_year_and_display_options(refresh_signal):
+        def update_year_and_display_options(
+            refresh_signal,
+            active_tab,
+            selected_language,
+            selected_author,
+            selected_booktype,
+            selected_book,
+            selected_category,
+            current_year,
+        ):
             """Update year filter and display mode options when new data is available"""
             # Get updated years
             years_reversed = sorted(self.available_years, reverse=True)
             year_options = [{"label": "Lifetime", "value": "lifetime"}] + \
                            [{"label": str(year), "value": year} for year in years_reversed]
+
+            if active_tab == "resources":
+                items = self._get_filtered_resource_items(
+                    selected_language=selected_language,
+                    selected_author=selected_author,
+                    selected_booktype=selected_booktype,
+                    selected_book=selected_book,
+                    selected_category=selected_category,
+                    ignore={"year"},
+                )
+                resource_years = {
+                    date.year
+                    for item in items
+                    for date in [pd.to_datetime(item.get("publication_date"), errors="coerce")]
+                    if not pd.isna(date)
+                }
+                if isinstance(current_year, int):
+                    resource_years.add(current_year)
+                year_options = [{"label": "Lifetime", "value": "lifetime"}] + [
+                    {"label": str(year), "value": year}
+                    for year in sorted(resource_years, reverse=True)
+                ]
             
             # Get updated languages for display mode
             all_languages = sort_with_accents([
@@ -2414,7 +2698,14 @@ class PublicDashboard:
             if active_tab == "purchase":
                 return self._create_purchase_tab(filtered_royalties, selected_language, selected_author, selected_booktype, selected_book, selected_category)
             elif active_tab == "resources":
-                return self._create_resources_tab()
+                return self._create_resources_tab(
+                    selected_language=selected_language,
+                    selected_category=selected_category,
+                    selected_author=selected_author,
+                    selected_booktype=selected_booktype,
+                    selected_book=selected_book,
+                    selected_years=selected_years,
+                )
             elif active_tab == "chatbot":
                 return self._create_chatbot_tab()
             elif active_tab == "sales":
@@ -4024,25 +4315,55 @@ class PublicDashboard:
             print(f"Warning: Could not load resources database: {e}")
             return []
 
+        if not hasattr(self, "_resource_authors_by_language"):
+            authors_by_language = {}
+            try:
+                books_df = pd.read_csv(BOOKS_DATABASE_PATH).fillna("")
+                for _, book in books_df.iterrows():
+                    language_key = str(book.get("language_name", "")).strip().casefold()
+                    if not language_key:
+                        continue
+                    for author in re.split(r"\s*(?:,|;|&|\band\b)\s*", str(book.get("authors", ""))):
+                        normalized = normalize_author_name(author.strip())
+                        if normalized and normalized != "Resulam":
+                            authors_by_language.setdefault(language_key, set()).add(normalized)
+            except Exception as e:
+                print(f"Warning: Could not infer resource authors: {e}")
+            self._resource_authors_by_language = authors_by_language
+
         if purchase_only and "display_in_purchase" in resources_df.columns:
             resources_df = resources_df[
                 resources_df["display_in_purchase"].astype(str).str.lower().isin(["true", "1", "yes"])
             ]
 
+        link_indices = sorted({
+            int(match.group(1))
+            for column in resources_df.columns
+            if (match := re.fullmatch(r"link(\d+)_url", str(column)))
+        })
         items = []
         for _, row in resources_df.iterrows():
             links = []
-            for idx in range(1, 4):
+            for idx in link_indices:
                 label = str(row.get(f"link{idx}_label", "")).strip()
                 url = str(row.get(f"link{idx}_url", "")).strip()
                 color = str(row.get(f"link{idx}_color", "")).strip() or "primary"
                 if label and url:
                     links.append((label, url, color))
 
+            language = str(row.get("language", "")).strip() or "All"
+            explicit_authors = _resource_values(row.get("authors", ""))
+            authors = explicit_authors or sorted(
+                self._resource_authors_by_language.get(language.casefold(), set())
+            )
             items.append({
                 "name": str(row.get("name", "")).strip(),
                 "category": str(row.get("category", "")).strip(),
-                "language": str(row.get("language", "")).strip() or "All",
+                "language": language,
+                "languages": _resource_values(row.get("languages", "")) or [language],
+                "authors": authors,
+                "book_types": _resource_values(row.get("book_types", "")),
+                "books": _resource_values(row.get("books", "")),
                 "publication_date": str(row.get("publication_date", "")).strip(),
                 "image": str(row.get("image", "")).strip(),
                 "image_fit": str(row.get("image_fit", "")).strip() or "contain",
@@ -4058,6 +4379,50 @@ class PublicDashboard:
             for item in self._load_resource_items(purchase_only=purchase_only)
             if item.get("category")
         })
+
+    def _get_filtered_resource_items(
+        self,
+        selected_years=None,
+        selected_language=None,
+        selected_author=None,
+        selected_booktype=None,
+        selected_book=None,
+        selected_category=None,
+        ignore=frozenset(),
+    ):
+        """Return Resources-tab items matching all active facets except ignored ones."""
+        return [
+            item
+            for item in self._load_resource_items(purchase_only=False)
+            if item.get("category") != "Comics"
+            and matches_resource_filters(
+                item,
+                selected_years=selected_years,
+                selected_language=selected_language,
+                selected_author=selected_author,
+                selected_booktype=selected_booktype,
+                selected_book=selected_book,
+                selected_category=selected_category,
+                ignore=ignore,
+            )
+        ]
+
+    @staticmethod
+    def _resource_filter_options(values, current_value, all_label, labels=None):
+        """Build faceted options while retaining the current URL/UI selection."""
+        unique_values = {
+            value
+            for value in values
+            if value is not None and str(value).strip() and not is_universal_language(value)
+        }
+        if _active_filter(current_value):
+            unique_values.add(current_value)
+        ordered = sorted(unique_values, key=lambda value: str(value).casefold())
+        labels = labels or {}
+        return [{"label": f"{all_label} ({len(ordered)})", "value": "all"}] + [
+            {"label": labels.get(value, value), "value": value}
+            for value in ordered
+        ]
 
     def _build_resource_card(self, item, lg=3):
         """Build one non-book resource card from the shared resource item shape."""
@@ -4097,27 +4462,51 @@ class PublicDashboard:
             )
             card_children.append(html.A(image, href=primary_url, target="_blank") if primary_url else image)
 
-        details = []
         language = item.get("language", "")
         category = item.get("category", "")
         description = item.get("description", "")
-        if language and language != "All":
-            details = [
-                html.Span(f"🌐 {language}", className="me-2"),
-                html.Br(),
-                html.Span(category, style={"fontSize": "0.8rem"}),
-            ]
-        elif description:
-            details = [description]
-        elif category:
-            details = [category]
+        language_label = "All languages" if language == "All" else (language or "Language not specified")
+        language_panel = html.Div(
+            [
+                html.Span("Language", className="resource-language-label"),
+                html.Span(
+                    [
+                        html.Span("🌐", **{"aria-hidden": "true"}, className="resource-language-icon"),
+                        language_label,
+                    ],
+                    className="resource-language-value",
+                ),
+            ],
+            className="resource-language-panel",
+            title=f"Language: {language_label}",
+            **{"aria-label": f"Language: {language_label}"},
+        )
 
-        body_children = [
-            html.H6(item.get("name", "Resource"), className="mb-2"),
-            html.P(details, className="card-text text-muted small mb-2") if details else html.Div(),
-            html.Div(link_buttons, className="mt-auto") if link_buttons else html.Span("Link coming soon", className="text-muted small"),
-        ]
-        card_children.append(dbc.CardBody(body_children, className="d-flex flex-column"))
+        details = []
+        if category:
+            details.append(html.Span(category, style={"fontSize": "0.8rem"}))
+        if description:
+            if details:
+                details.append(html.Br())
+            details.append(html.Span(description))
+
+        primary_details = html.Div(
+            [
+                html.H6(item.get("name", "Resource"), className="mb-2"),
+                html.P(details, className="card-text text-muted small mb-0") if details else html.Div(),
+            ],
+            className="resource-card-primary",
+        )
+        actions = (
+            html.Div(link_buttons, className="resource-card-actions")
+            if link_buttons
+            else html.Span("Link coming soon", className="resource-card-actions text-muted small")
+        )
+        body_children = html.Div(
+            [primary_details, language_panel, actions],
+            className="resource-card-metadata",
+        )
+        card_children.append(dbc.CardBody(body_children))
 
         return dbc.Col(
             dbc.Card(card_children, className="shadow-sm h-100"),
@@ -4128,11 +4517,29 @@ class PublicDashboard:
             className="mb-3",
         )
 
-    def _create_resources_tab(self):
+    def _create_resources_tab(
+        self,
+        selected_language=None,
+        selected_category=None,
+        selected_author=None,
+        selected_booktype=None,
+        selected_book=None,
+        selected_years=None,
+    ):
         """Create the curated resources tab content from the shared resources CSV."""
         resource_groups = {}
         for item in self._load_resource_items(purchase_only=False):
             if item.get("category") == "Comics":
+                continue
+            if not matches_resource_filters(
+                item,
+                selected_years=selected_years,
+                selected_language=selected_language,
+                selected_author=selected_author,
+                selected_booktype=selected_booktype,
+                selected_book=selected_book,
+                selected_category=selected_category,
+            ):
                 continue
             resource_groups.setdefault(item["category"] or "Resources", []).append(item)
 
