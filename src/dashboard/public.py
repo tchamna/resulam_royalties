@@ -4,6 +4,7 @@ Modern Dash Dashboard Application
 import dash
 import os
 import re
+from urllib.parse import parse_qs, urlencode, quote
 from dash import html, dcc, Input, Output, State
 import dash_bootstrap_components as dbc
 from typing import Dict, List
@@ -117,6 +118,125 @@ def get_unique_authors(authors_series: pd.Series) -> list:
 def count_unique_normalized_authors(authors_series: pd.Series) -> int:
     """Count unique authors after normalizing - uses individual authors from exploded data"""
     return len(get_unique_authors(authors_series))
+
+
+DEFAULT_DASHBOARD_TAB = "purchase"
+DEFAULT_CHART_DISPLAY = "all_stacked"
+VALID_DASHBOARD_TABS = frozenset(
+    {"purchase", "resources", "chatbot", "sales", "books", "geography"}
+)
+
+
+def _first_query_value(params: dict, key: str):
+    """Return the first value for a query parameter key, or None."""
+    values = params.get(key)
+    if not values:
+        return None
+    return values[0]
+
+
+def _normalize_url_search(search) -> str:
+    """Normalize a URL search string for comparison (empty or leading '?')."""
+    if not search:
+        return ""
+    return search if str(search).startswith("?") else f"?{search}"
+
+
+def build_filter_search_string(
+    year,
+    lang,
+    category,
+    book,
+    author,
+    booktype,
+    tab,
+    chart,
+) -> str:
+    """Build a bookmarkable query string from dashboard filter state."""
+    params = {}
+    if year and year != "lifetime":
+        params["year"] = str(year)
+    if lang and lang != "all":
+        params["lang"] = lang
+    if category and category != "all":
+        params["category"] = category
+    if book and book != "all":
+        params["book"] = book
+    if author and author != "all":
+        params["author"] = author
+    if booktype and booktype != "all":
+        params["type"] = booktype
+    if tab and tab != DEFAULT_DASHBOARD_TAB:
+        params["tab"] = tab
+    if chart and chart != DEFAULT_CHART_DISPLAY:
+        params["chart"] = chart
+    if not params:
+        return ""
+    return "?" + urlencode(params, quote_via=quote)
+
+
+def parse_filter_search_string(search, ctx: dict) -> dict:
+    """Parse and validate URL query params into dashboard filter values."""
+    params = parse_qs(_normalize_url_search(search).lstrip("?"), keep_blank_values=False)
+
+    year = "lifetime"
+    raw_year = _first_query_value(params, "year")
+    if raw_year:
+        if raw_year == "lifetime":
+            year = "lifetime"
+        else:
+            try:
+                year_int = int(raw_year)
+                if year_int in ctx["years"]:
+                    year = year_int
+            except (TypeError, ValueError):
+                pass
+
+    lang = "all"
+    raw_lang = _first_query_value(params, "lang")
+    if raw_lang and raw_lang in ctx["languages"]:
+        lang = raw_lang
+
+    category = "all"
+    raw_category = _first_query_value(params, "category")
+    if raw_category and raw_category in ctx["categories"]:
+        category = raw_category
+
+    book = "all"
+    raw_book = _first_query_value(params, "book")
+    if raw_book and raw_book in ctx["books"]:
+        book = raw_book
+
+    author = "all"
+    raw_author = _first_query_value(params, "author")
+    if raw_author and raw_author in ctx["authors"]:
+        author = raw_author
+
+    booktype = "all"
+    raw_type = _first_query_value(params, "type")
+    if raw_type and raw_type in ctx["book_types"]:
+        booktype = raw_type
+
+    tab = DEFAULT_DASHBOARD_TAB
+    raw_tab = _first_query_value(params, "tab")
+    if raw_tab and raw_tab in ctx["tabs"]:
+        tab = raw_tab
+
+    chart = DEFAULT_CHART_DISPLAY
+    raw_chart = _first_query_value(params, "chart")
+    if raw_chart and raw_chart in ctx["chart_modes"]:
+        chart = raw_chart
+
+    return {
+        "year": year,
+        "lang": lang,
+        "category": category,
+        "book": book,
+        "author": author,
+        "booktype": booktype,
+        "tab": tab,
+        "chart": chart,
+    }
 
 
 class PublicDashboard:
@@ -1106,6 +1226,8 @@ class PublicDashboard:
         
         # Main layout
         self.app.layout = dbc.Container([
+            dcc.Location(id="url", refresh=False),
+            dcc.Store(id="url-sync-flag", data=None),
             header,
             filter_section,
             tabs,
@@ -1163,6 +1285,37 @@ class PublicDashboard:
                 )
             ], className="mt-4 mb-4")
         ], fluid=True)
+
+    def _get_url_filter_context(self) -> dict:
+        """Build validation sets for URL filter parsing."""
+        all_languages = sort_with_accents([
+            lang for lang in self.royalties['Language'].unique().tolist()
+            if lang not in ['African Names', 'Bamileke']
+        ])
+        all_authors = get_unique_authors(self.royalties_exploded['Authors_Exploded'])
+        all_book_types = sorted(self.royalties['BookType'].dropna().unique().tolist())
+        all_book_nicknames = sorted(self.royalties['book_nick_name'].dropna().unique().tolist())
+        try:
+            books_df = pd.read_csv(BOOKS_DATABASE_PATH)
+            all_categories = sorted(books_df['category'].dropna().unique().tolist())
+        except Exception:
+            all_categories = []
+        resource_categories = self._get_resource_categories(purchase_only=True)
+        all_categories = sorted(set(all_categories).union(resource_categories))
+
+        chart_modes = {"all_stacked", "all_grouped"}
+        chart_modes.update(f"language::{lang}" for lang in all_languages)
+
+        return {
+            "years": set(self.available_years),
+            "languages": set(all_languages),
+            "categories": set(all_categories),
+            "books": set(all_book_nicknames),
+            "authors": set(all_authors),
+            "book_types": set(all_book_types) | {"all"},
+            "tabs": VALID_DASHBOARD_TABS,
+            "chart_modes": chart_modes,
+        }
     
     def _register_callbacks(self):
         """Register all dashboard callbacks"""
@@ -1674,12 +1827,108 @@ class PublicDashboard:
             Output("booktype-filter", "value"),
             Output("book-filter", "value"),
             Output("category-filter", "value"),
+            Output("dashboard-tabs", "active_tab"),
+            Output("sales-language-display-mode", "value"),
+            Output("url", "search"),
+            Output("url-sync-flag", "data"),
             Input("reset-all-filters", "n_clicks"),
             prevent_initial_call=True
         )
         def reset_all_filters(n_clicks):
-            """Reset all filters to their default values"""
-            return "lifetime", "all", "all", "all", "all", "all"
+            """Reset all filters to their default values and clear the URL."""
+            return (
+                "lifetime", "all", "all", "all", "all", "all",
+                DEFAULT_DASHBOARD_TAB, DEFAULT_CHART_DISPLAY,
+                "", "from_filters",
+            )
+
+        @self.app.callback(
+            Output("year-filter", "value", allow_duplicate=True),
+            Output("language-filter", "value", allow_duplicate=True),
+            Output("author-filter", "value", allow_duplicate=True),
+            Output("booktype-filter", "value", allow_duplicate=True),
+            Output("book-filter", "value", allow_duplicate=True),
+            Output("category-filter", "value", allow_duplicate=True),
+            Output("dashboard-tabs", "active_tab", allow_duplicate=True),
+            Output("sales-language-display-mode", "value", allow_duplicate=True),
+            Output("url-sync-flag", "data", allow_duplicate=True),
+            Input("url", "search"),
+            State("year-filter", "value"),
+            State("language-filter", "value"),
+            State("author-filter", "value"),
+            State("booktype-filter", "value"),
+            State("book-filter", "value"),
+            State("category-filter", "value"),
+            State("dashboard-tabs", "active_tab"),
+            State("sales-language-display-mode", "value"),
+            State("url-sync-flag", "data"),
+            prevent_initial_call="initial_duplicate",
+        )
+        def apply_url_to_filters(
+            search,
+            year,
+            lang,
+            author,
+            booktype,
+            book,
+            category,
+            tab,
+            chart,
+            sync_flag,
+        ):
+            """Apply bookmarked URL query params to dashboard filters."""
+            if sync_flag == "from_filters":
+                return (
+                    dash.no_update, dash.no_update, dash.no_update, dash.no_update,
+                    dash.no_update, dash.no_update, dash.no_update, dash.no_update,
+                    None,
+                )
+
+            parsed = parse_filter_search_string(search, self._get_url_filter_context())
+            return (
+                parsed["year"] if parsed["year"] != year else dash.no_update,
+                parsed["lang"] if parsed["lang"] != lang else dash.no_update,
+                parsed["author"] if parsed["author"] != author else dash.no_update,
+                parsed["booktype"] if parsed["booktype"] != booktype else dash.no_update,
+                parsed["book"] if parsed["book"] != book else dash.no_update,
+                parsed["category"] if parsed["category"] != category else dash.no_update,
+                parsed["tab"] if parsed["tab"] != tab else dash.no_update,
+                parsed["chart"] if parsed["chart"] != chart else dash.no_update,
+                None,
+            )
+
+        @self.app.callback(
+            Output("url", "search", allow_duplicate=True),
+            Output("url-sync-flag", "data", allow_duplicate=True),
+            Input("year-filter", "value"),
+            Input("language-filter", "value"),
+            Input("author-filter", "value"),
+            Input("booktype-filter", "value"),
+            Input("book-filter", "value"),
+            Input("category-filter", "value"),
+            Input("dashboard-tabs", "active_tab"),
+            Input("sales-language-display-mode", "value"),
+            State("url", "search"),
+            prevent_initial_call=True,
+        )
+        def apply_filters_to_url(
+            year,
+            lang,
+            author,
+            booktype,
+            book,
+            category,
+            tab,
+            chart,
+            current_search,
+        ):
+            """Keep the URL in sync when filters, tab, or chart change."""
+            new_search = build_filter_search_string(
+                year, lang, category, book, author, booktype, tab, chart
+            )
+            if _normalize_url_search(current_search) == new_search:
+                raise dash.exceptions.PreventUpdate
+            return new_search, "from_filters"
 
         @self.app.callback(
             Output("year-filter", "options"),
