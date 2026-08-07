@@ -418,6 +418,43 @@ def parse_filter_search_string(search, ctx: dict) -> dict:
     }
 
 
+def get_category_royalty_nicknames(category: str) -> set[str]:
+    """Return the royalty nicknames represented by a books-database category.
+
+    The catalogue and royalty reports do not always use the same nickname.  Keep
+    that translation in one place so cards, charts, tabs, and faceted dropdowns
+    cannot disagree about what a category contains.
+    """
+    if not category or category == "all":
+        return set()
+
+    try:
+        books_df = pd.read_csv(BOOKS_DATABASE_PATH)
+        category_books = books_df[books_df["category"] == category]
+        from src.hardcoded_nicknames import HARDCODED_TITLE_NICKNAMES, DB_NICKNAME_TO_ROYALTY
+    except Exception:
+        return set()
+
+    nicknames = set()
+    for db_nickname in category_books["book_nick_name"].dropna():
+        nicknames.update(DB_NICKNAME_TO_ROYALTY.get(db_nickname, [db_nickname]))
+
+    # Some older database rows only line up with the royalty report by title.
+    # Include those aliases for every consumer of the category filter.
+    for title in category_books.get("title", pd.Series(dtype=str)).dropna():
+        title = str(title).strip()
+        if not title:
+            continue
+        title_prefix = title.split(":", 1)[0].strip().casefold()
+        for hardcoded_title, nickname in HARDCODED_TITLE_NICKNAMES.items():
+            hardcoded_prefix = hardcoded_title.split(":", 1)[0].strip().casefold()
+            if title.casefold() in hardcoded_title.casefold() or hardcoded_title.casefold() in title.casefold() or title_prefix == hardcoded_prefix:
+                nicknames.add(nickname)
+                break
+
+    return nicknames
+
+
 class PublicDashboard:
     """Public dashboard application class - customized for external audiences"""
     
@@ -1858,26 +1895,10 @@ class PublicDashboard:
             
             # Apply category filter first (if applicable)
             if selected_category and selected_category != "all":
-                books_df = pd.read_csv(BOOKS_DATABASE_PATH)
-                category_books = books_df[books_df['category'] == selected_category]
-                
-                from src.hardcoded_nicknames import DB_NICKNAME_TO_ROYALTY
-                category_nicknames = set()
-                
-                # Get all database nicknames for this category
-                db_nicknames = category_books['book_nick_name'].dropna().tolist()
-                
-                for db_nick in db_nicknames:
-                    # First, check if this DB nickname maps to royalty nicknames
-                    if db_nick in DB_NICKNAME_TO_ROYALTY:
-                        category_nicknames.update(DB_NICKNAME_TO_ROYALTY[db_nick])
-                    else:
-                        # Add the DB nickname itself (might match directly)
-                        category_nicknames.add(db_nick)
-                
-                if category_nicknames:
-                    df = df[df['book_nick_name'].isin(category_nicknames)]
-                    df_exploded = df_exploded[df_exploded['book_nick_name'].isin(category_nicknames)]
+                category_nicknames = get_category_royalty_nicknames(selected_category)
+                # An empty mapping must produce no sales, never silently show all sales.
+                df = df[df['book_nick_name'].isin(category_nicknames)]
+                df_exploded = df_exploded[df_exploded['book_nick_name'].isin(category_nicknames)]
             
             if selected_language and selected_language != "all":
                 df = filter_by_language(df, selected_language)
@@ -2205,35 +2226,14 @@ class PublicDashboard:
             # Get filtered royalties data (without category filter)
             df, _ = _get_filtered_data(years, selected_language, selected_author, selected_booktype, selected_book, None)
             
-            # Map royalties nicknames back to categories from books database.
-            # Royalties use short nicknames, while the DB may use long descriptive nicknames.
-            # Bridge via DB_NICKNAME_TO_ROYALTY when available.
+            # Use the same category-to-royalty mapping as the actual data views.
             books_df = pd.read_csv(BOOKS_DATABASE_PATH)
-            db_nickname_to_category = dict(zip(books_df['book_nick_name'], books_df['category']))
-
-            royalty_nickname_to_categories = {}
-            for db_nick, cat in db_nickname_to_category.items():
-                if not cat:
-                    continue
-                royalty_nickname_to_categories.setdefault(db_nick, set()).add(cat)
-
-            try:
-                from src.hardcoded_nicknames import DB_NICKNAME_TO_ROYALTY
-
-                for db_nick, royalty_nicks in DB_NICKNAME_TO_ROYALTY.items():
-                    cat = db_nickname_to_category.get(db_nick)
-                    if not cat:
-                        continue
-                    for royalty_nick in royalty_nicks:
-                        royalty_nickname_to_categories.setdefault(royalty_nick, set()).add(cat)
-            except Exception:
-                pass
-            
-            available_categories = set()
-            for nick in df['book_nick_name'].dropna().unique():
-                for cat in royalty_nickname_to_categories.get(nick, set()):
-                    if cat:
-                        available_categories.add(cat)
+            available_nicknames = set(df["book_nick_name"].dropna())
+            available_categories = {
+                category
+                for category in books_df["category"].dropna().unique()
+                if available_nicknames.intersection(get_category_royalty_nicknames(category))
+            }
             available_categories.update(self._get_resource_categories(purchase_only=True))
             
             available_categories = sorted(list(available_categories))
@@ -2387,39 +2387,9 @@ class PublicDashboard:
             
             # Apply category filter
             if selected_category and selected_category != "all":
-                try:
-                    books_df = pd.read_csv(BOOKS_DATABASE_PATH)
-                    category_books = books_df[books_df['category'] == selected_category]
-                    
-                    from src.hardcoded_nicknames import HARDCODED_TITLE_NICKNAMES, DB_NICKNAME_TO_ROYALTY
-                    category_nicknames = set()
-                    
-                    # Get all database nicknames for this category
-                    db_nicknames = category_books['book_nick_name'].dropna().tolist()
-                    
-                    for db_nick in db_nicknames:
-                        # First, check if this DB nickname maps to royalty nicknames
-                        if db_nick in DB_NICKNAME_TO_ROYALTY:
-                            category_nicknames.update(DB_NICKNAME_TO_ROYALTY[db_nick])
-                        else:
-                            # Add the DB nickname itself (might match directly)
-                            category_nicknames.add(db_nick)
-                    
-                    # Also try to match via title -> hardcoded nicknames
-                    category_titles = category_books['title'].tolist()
-                    for title in category_titles:
-                        if title:
-                            for hc_title, nickname in HARDCODED_TITLE_NICKNAMES.items():
-                                if (title in hc_title or hc_title in str(title) or 
-                                    title.split(':')[0].strip() == hc_title.split(':')[0].strip()):
-                                    category_nicknames.add(nickname)
-                                    break
-                    
-                    if category_nicknames:
-                        filtered_df = filtered_df[filtered_df['book_nick_name'].isin(category_nicknames)]
-                        filtered_exploded = filtered_exploded[filtered_exploded['book_nick_name'].isin(category_nicknames)]
-                except Exception as e:
-                    print(f"Error in category filter: {e}")
+                category_nicknames = get_category_royalty_nicknames(selected_category)
+                filtered_df = filtered_df[filtered_df['book_nick_name'].isin(category_nicknames)]
+                filtered_exploded = filtered_exploded[filtered_exploded['book_nick_name'].isin(category_nicknames)]
             
             metrics = SummaryMetrics.calculate_metrics(filtered_df, filtered_exploded)
             
@@ -2464,37 +2434,9 @@ class PublicDashboard:
             
             # Apply category filter
             if selected_category and selected_category != "all":
-                try:
-                    books_df = pd.read_csv(BOOKS_DATABASE_PATH)
-                    category_books = books_df[books_df['category'] == selected_category]
-                    
-                    from src.hardcoded_nicknames import HARDCODED_TITLE_NICKNAMES, DB_NICKNAME_TO_ROYALTY
-                    category_nicknames = set()
-                    
-                    # Get all database nicknames for this category
-                    db_nicknames = category_books['book_nick_name'].dropna().tolist()
-                    
-                    for db_nick in db_nicknames:
-                        if db_nick in DB_NICKNAME_TO_ROYALTY:
-                            category_nicknames.update(DB_NICKNAME_TO_ROYALTY[db_nick])
-                        else:
-                            category_nicknames.add(db_nick)
-                    
-                    # Also match via title -> hardcoded nicknames
-                    category_titles = category_books['title'].tolist()
-                    for title in category_titles:
-                        if title:
-                            for hc_title, nickname in HARDCODED_TITLE_NICKNAMES.items():
-                                if (title in hc_title or hc_title in str(title) or 
-                                    title.split(':')[0].strip() == hc_title.split(':')[0].strip()):
-                                    category_nicknames.add(nickname)
-                                    break
-                    
-                    if category_nicknames:
-                        trend_data = trend_data[trend_data['book_nick_name'].isin(category_nicknames)]
-                    filter_parts.append(f"📚 {selected_category}")
-                except Exception:
-                    pass
+                category_nicknames = get_category_royalty_nicknames(selected_category)
+                trend_data = trend_data[trend_data['book_nick_name'].isin(category_nicknames)]
+                filter_parts.append(f"📚 {selected_category}")
             
             total_books = trend_data['Net Units Sold'].sum()
             filter_text = " | ".join(filter_parts) if filter_parts else "All"
@@ -2647,39 +2589,9 @@ class PublicDashboard:
             
             # Filter by category if selected (applies to all tabs)
             if selected_category and selected_category != "all":
-                try:
-                    # Load books database to get title -> category mapping
-                    books_df = pd.read_csv(BOOKS_DATABASE_PATH)
-                    category_books = books_df[books_df['category'] == selected_category]
-                    
-                    from src.hardcoded_nicknames import HARDCODED_TITLE_NICKNAMES, DB_NICKNAME_TO_ROYALTY
-                    category_nicknames = set()
-                    
-                    # Get all database nicknames for this category and map to royalty nicknames
-                    db_nicknames = category_books['book_nick_name'].dropna().tolist()
-                    for db_nick in db_nicknames:
-                        if db_nick in DB_NICKNAME_TO_ROYALTY:
-                            category_nicknames.update(DB_NICKNAME_TO_ROYALTY[db_nick])
-                        else:
-                            category_nicknames.add(db_nick)
-                    
-                    # Also match via title -> hardcoded nicknames
-                    category_titles = category_books['title'].tolist()
-                    for title in category_titles:
-                        if title:
-                            for hc_title, nickname in HARDCODED_TITLE_NICKNAMES.items():
-                                if (title in hc_title or hc_title in str(title) or 
-                                    title.split(':')[0].strip() == hc_title.split(':')[0].strip()):
-                                    category_nicknames.add(nickname)
-                                    break
-                    
-                    # Filter royalties to only include books in this category
-                    if category_nicknames:
-                        filtered_royalties = filtered_royalties[filtered_royalties['book_nick_name'].isin(category_nicknames)]
-                        filtered_exploded = filtered_exploded[filtered_exploded['book_nick_name'].isin(category_nicknames)]
-                except Exception as e:
-                    print(f"Category filter error: {e}")
-                    pass  # If books database can't be loaded, skip category filter
+                category_nicknames = get_category_royalty_nicknames(selected_category)
+                filtered_royalties = filtered_royalties[filtered_royalties['book_nick_name'].isin(category_nicknames)]
+                filtered_exploded = filtered_exploded[filtered_exploded['book_nick_name'].isin(category_nicknames)]
             
             # Build filter text for dynamic titles
             filter_parts = []
@@ -4596,14 +4508,28 @@ class PublicDashboard:
                 seen_names.add(name)
         return preview_items
 
-    def _build_resource_preview_entries(self, selected_language=None, selected_category=None):
+    def _build_resource_preview_entries(
+        self,
+        selected_language=None,
+        selected_category=None,
+        selected_author=None,
+        selected_booktype=None,
+        selected_book=None,
+    ):
         """Build dated non-book resource entries that share the book grid layout."""
         preview_items = self._get_resource_preview_items(selected_language)
-        if selected_category and selected_category != "all":
-            preview_items = [
-                item for item in preview_items
-                if item.get("category") == selected_category
-            ]
+        preview_items = [
+            item
+            for item in preview_items
+            if matches_resource_filters(
+                item,
+                selected_language=selected_language,
+                selected_author=selected_author,
+                selected_booktype=selected_booktype,
+                selected_book=selected_book,
+                selected_category=selected_category,
+            )
+        ]
 
         if not preview_items:
             return []
@@ -4658,8 +4584,7 @@ class PublicDashboard:
                     lambda value: matches_language_filter(value, selected_language)
                 )
             ]
-            if len(lang_filtered) > 0:
-                filtered_books = lang_filtered
+            filtered_books = lang_filtered
         
         # Apply author filter if selected
         if selected_author and selected_author != "all":
@@ -4678,8 +4603,7 @@ class PublicDashboard:
                 return matches >= min_matches
             
             author_filtered = filtered_books[filtered_books['authors'].apply(author_matches)]
-            if len(author_filtered) > 0:
-                filtered_books = author_filtered
+            filtered_books = author_filtered
         
         # Apply book filter if selected.
         # Here we expect a canonical nickname (e.g. "ewondo_conversation_de_base").
@@ -4710,8 +4634,7 @@ class PublicDashboard:
 
                 book_filtered = filtered_books[filtered_books["book_nick_name"].apply(book_matches_strict)]
 
-            if len(book_filtered) > 0:
-                filtered_books = book_filtered
+            filtered_books = book_filtered
         
         # Apply book type filter if selected (show books that have that format available)
         if selected_booktype and selected_booktype != "all":
@@ -4723,14 +4646,19 @@ class PublicDashboard:
                 booktype_filtered = filtered_books[filtered_books['hard_cover'].notna() & (filtered_books['hard_cover'] != '')]
             else:
                 booktype_filtered = filtered_books
-            if len(booktype_filtered) > 0:
-                filtered_books = booktype_filtered
+            filtered_books = booktype_filtered
         
         # Apply category filter if selected (strict filter - must match exactly)
         if selected_category and selected_category != "all":
             filtered_books = filtered_books[filtered_books['category'] == selected_category]
 
-        resource_entries = self._build_resource_preview_entries(selected_language, selected_category)
+        resource_entries = self._build_resource_preview_entries(
+            selected_language=selected_language,
+            selected_category=selected_category,
+            selected_author=selected_author,
+            selected_booktype=selected_booktype,
+            selected_book=selected_book,
+        )
         resource_cards = [card for _, card in resource_entries]
         resources_preview = html.Div([
             html.H3("Comics & Online Courses", className="mt-2 mb-3"),
